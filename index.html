@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Travel Planner</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Travel Planner</h1>
+    <div class="header-controls">
+      <select id="trip-selector" aria-label="Select trip"></select>
+      <button id="theme-toggle" aria-label="Toggle theme" title="Toggle theme">🌙</button>
+      <button id="import-btn" title="Import trips from a JSON file">Import</button>
+      <button id="export-btn" title="Download trips.json">Export</button>
+      <button id="reload-btn" title="Discard local changes, reload from file">Reload</button>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <aside class="sidebar">
+      <div id="trip-detail"></div>
+      <button id="new-trip-btn" class="primary">+ New trip</button>
+    </aside>
+    <div id="map"></div>
+  </main>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.min.js"></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
