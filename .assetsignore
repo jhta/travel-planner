@@ -1,0 +1,7 @@
+CLAUDE.md
+.git
+.gitignore
+.wrangler
+wrangler.jsonc
+.assetsignore
+node_modules

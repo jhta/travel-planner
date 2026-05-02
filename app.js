@@ -17,6 +17,8 @@ let geocodeAbort = null;
 let tripEditing = false;
 let editingPlaceId = null;
 let selectedPlaceId = null;
+let expandedPlaceId = null;
+let gapAction = null; // { index, mode: 'menu' | 'place' | 'transport' }
 let focusAfterRender = null;
 
 // ---------- Persistence ----------
@@ -123,6 +125,8 @@ function importFromFile() {
 
       state.activeTripId = added[0].id;
       selectedPlaceId = null;
+      expandedPlaceId = null;
+      gapAction = null;
       saveState();
       if (!map) initMap();
       render();
@@ -138,6 +142,8 @@ async function reloadFromFile() {
   if (!confirm('Discard local changes and reload from trips.json?')) return;
   localStorage.removeItem(STORAGE_KEY);
   selectedPlaceId = null;
+  expandedPlaceId = null;
+  gapAction = null;
   await loadFromFile();
   if (state.trips.length === 0) {
     startOnboarding({ initial: true });
@@ -187,6 +193,11 @@ function ensureTripFields(trip) {
   if (!trip.flights.inbound) trip.flights.inbound = { number: '', booking: '' };
   if (!Array.isArray(trip.documents)) trip.documents = [];
   if (!Array.isArray(trip.packing)) trip.packing = [];
+  if (Array.isArray(trip.places)) {
+    trip.places.forEach((p) => {
+      if (!Array.isArray(p.activities)) p.activities = [];
+    });
+  }
 }
 
 // ---------- State mutations ----------
@@ -204,6 +215,8 @@ function deleteTrip(id) {
 function setActiveTrip(id) {
   state.activeTripId = id;
   selectedPlaceId = null;
+  expandedPlaceId = null;
+  gapAction = null;
   saveState();
   render();
 }
@@ -223,6 +236,38 @@ function addPlace(place) {
   render();
 }
 
+function insertPlaceAt(index, place) {
+  const trip = getActiveTrip();
+  if (!trip) return;
+  const i = Math.max(0, Math.min(index, trip.places.length));
+  trip.places.splice(i, 0, place);
+  gapAction = null;
+  saveState();
+  render();
+}
+
+function setTransport(placeId, transport) {
+  const trip = getActiveTrip();
+  if (!trip) return;
+  const place = trip.places.find((p) => p.id === placeId);
+  if (!place) return;
+  place.transportTo = transport;
+  gapAction = null;
+  saveState();
+  render();
+}
+
+function clearTransport(placeId) {
+  const trip = getActiveTrip();
+  if (!trip) return;
+  const place = trip.places.find((p) => p.id === placeId);
+  if (!place) return;
+  delete place.transportTo;
+  gapAction = null;
+  saveState();
+  render();
+}
+
 function updatePlace(placeId, updates) {
   const trip = getActiveTrip();
   if (!trip) return;
@@ -238,6 +283,60 @@ function deletePlace(placeId) {
   if (!trip) return;
   trip.places = trip.places.filter((p) => p.id !== placeId);
   if (selectedPlaceId === placeId) selectedPlaceId = null;
+  if (expandedPlaceId === placeId) expandedPlaceId = null;
+  saveState();
+  render();
+}
+
+function addActivity(placeId, text) {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  const trip = getActiveTrip();
+  if (!trip) return;
+  const place = trip.places.find((p) => p.id === placeId);
+  if (!place) return;
+  if (!Array.isArray(place.activities)) place.activities = [];
+  place.activities.push({ id: newId('a'), text: trimmed, done: false });
+  focusAfterRender = `[data-add-activity="${placeId}"]`;
+  saveState();
+  render();
+}
+
+function toggleActivity(placeId, activityId) {
+  const trip = getActiveTrip();
+  if (!trip) return;
+  const place = trip.places.find((p) => p.id === placeId);
+  if (!place || !Array.isArray(place.activities)) return;
+  const a = place.activities.find((x) => x.id === activityId);
+  if (!a) return;
+  a.done = !a.done;
+  saveState();
+  render();
+}
+
+function removeActivity(placeId, activityId) {
+  const trip = getActiveTrip();
+  if (!trip) return;
+  const place = trip.places.find((p) => p.id === placeId);
+  if (!place || !Array.isArray(place.activities)) return;
+  place.activities = place.activities.filter((x) => x.id !== activityId);
+  saveState();
+  render();
+}
+
+function setActivityLink(placeId, activityId, rawUrl) {
+  const trip = getActiveTrip();
+  if (!trip) return;
+  const place = trip.places.find((p) => p.id === placeId);
+  if (!place || !Array.isArray(place.activities)) return;
+  const a = place.activities.find((x) => x.id === activityId);
+  if (!a) return;
+  const trimmed = (rawUrl || '').trim();
+  if (!trimmed) {
+    delete a.link;
+  } else {
+    a.link = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  }
   saveState();
   render();
 }
@@ -413,6 +512,9 @@ function renderSidebar() {
   } else {
     trip.places.forEach((place, i) => {
       list.appendChild(renderPlaceCard(place, i));
+      if (i < trip.places.length - 1) {
+        list.appendChild(renderPlaceGap(trip, i + 1));
+      }
     });
   }
   root.appendChild(list);
@@ -672,12 +774,16 @@ function renderPlaceCard(place, idx) {
   const card = document.createElement('article');
   card.className = 'place-card';
   if (selectedPlaceId === place.id) card.classList.add('selected');
+  if (expandedPlaceId === place.id && editingPlaceId !== place.id) {
+    card.classList.add('expanded');
+  }
   card.dataset.placeId = place.id;
 
   const row = document.createElement('div');
   row.className = 'place-row';
   row.addEventListener('click', (e) => {
     if (e.target.closest('.edit-btn')) return;
+    if (e.target.closest('.activity-pill')) return;
     selectPlace(place.id);
   });
 
@@ -699,7 +805,7 @@ function renderPlaceCard(place, idx) {
   const dates = document.createElement('p');
   dates.className = 'place-dates';
   dates.textContent = placeDisplayDates(place, trip, idx);
-  info.append(nameRow, dates);
+  info.append(nameRow, dates, renderActivityPill(place));
 
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
@@ -715,9 +821,501 @@ function renderPlaceCard(place, idx) {
 
   if (editingPlaceId === place.id) {
     card.appendChild(renderPlaceEdit(place));
+  } else if (expandedPlaceId === place.id) {
+    card.appendChild(renderActivities(place));
   }
 
   return card;
+}
+
+function renderActivityPill(place) {
+  const activities = Array.isArray(place.activities) ? place.activities : [];
+  const total = activities.length;
+  const done = activities.filter((a) => a.done).length;
+  const isExpanded = expandedPlaceId === place.id && editingPlaceId !== place.id;
+
+  const pill = document.createElement('button');
+  pill.type = 'button';
+  pill.className = 'activity-pill';
+  if (total === 0) pill.classList.add('empty');
+  else if (done === total) pill.classList.add('done');
+  else if (done > 0) pill.classList.add('partial');
+  if (isExpanded) pill.classList.add('open');
+  pill.setAttribute('aria-expanded', String(isExpanded));
+
+  const icon = document.createElement('span');
+  icon.className = 'pill-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = total === 0 ? '+' : done === total ? '✓' : '◔';
+
+  const label = document.createElement('span');
+  label.className = 'pill-label';
+  if (total === 0) {
+    label.textContent = 'Add activities';
+  } else {
+    label.textContent = `${done}/${total} ${total === 1 ? 'activity' : 'activities'}`;
+  }
+
+  const chevron = svgIcon(
+    'M3 4.5l3 3 3-3',
+    { className: 'pill-chev', size: 12 }
+  );
+
+  pill.append(icon, label, chevron);
+
+  pill.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (editingPlaceId === place.id) return;
+    expandedPlaceId = expandedPlaceId === place.id ? null : place.id;
+    if (expandedPlaceId === place.id && total === 0) {
+      focusAfterRender = `[data-add-activity="${place.id}"]`;
+    }
+    render();
+  });
+
+  return pill;
+}
+
+function renderActivities(place) {
+  const activities = Array.isArray(place.activities) ? place.activities : [];
+  const wrap = document.createElement('div');
+  wrap.className = 'activities';
+
+  const header = document.createElement('div');
+  header.className = 'activities-header';
+  const title = document.createElement('span');
+  title.className = 'activities-title';
+  title.textContent = 'Activities';
+  const count = document.createElement('span');
+  count.className = 'activities-count';
+  const done = activities.filter((a) => a.done).length;
+  count.textContent = activities.length ? `${done}/${activities.length}` : '';
+  header.append(title, count);
+  wrap.appendChild(header);
+
+  if (activities.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'activities-empty';
+    empty.textContent = 'Nothing planned yet — add your first one below.';
+    wrap.appendChild(empty);
+  } else {
+    const list = document.createElement('ul');
+    list.className = 'activity-list';
+    activities.forEach((a) => list.appendChild(renderActivityItem(place, a)));
+    wrap.appendChild(list);
+  }
+
+  const addRow = document.createElement('form');
+  addRow.className = 'activity-add';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Add an activity…';
+  input.dataset.addActivity = place.id;
+  input.autocomplete = 'off';
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.className = 'activity-add-btn';
+  submit.textContent = 'Add';
+  addRow.append(input, submit);
+  addRow.addEventListener('submit', (e) => {
+    e.preventDefault();
+    addActivity(place.id, input.value);
+  });
+  wrap.appendChild(addRow);
+
+  return wrap;
+}
+
+function renderActivityItem(place, activity) {
+  const li = document.createElement('li');
+  li.className = 'activity-item';
+  if (activity.done) li.classList.add('done');
+  if (activity.link) li.classList.add('has-link');
+
+  const check = document.createElement('button');
+  check.type = 'button';
+  check.className = 'activity-check';
+  check.setAttribute('aria-label', activity.done ? 'Mark as not done' : 'Mark as done');
+  check.setAttribute('aria-pressed', String(!!activity.done));
+  check.textContent = activity.done ? '✓' : '';
+  check.addEventListener('click', () => toggleActivity(place.id, activity.id));
+
+  const text = document.createElement('span');
+  text.className = 'activity-text';
+  text.textContent = activity.text;
+  text.addEventListener('click', () => toggleActivity(place.id, activity.id));
+
+  const actions = document.createElement('span');
+  actions.className = 'activity-actions';
+
+  const linkEdit = document.createElement('button');
+  linkEdit.type = 'button';
+  linkEdit.className = 'activity-link-edit';
+  linkEdit.setAttribute('aria-label', activity.link ? 'Edit link' : 'Add link');
+  linkEdit.title = activity.link ? 'Edit link' : 'Add link';
+  linkEdit.appendChild(
+    activity.link
+      ? svgIcon('M2 9l5-5 1 1-5 5H2zM6 4l1-1 1 1', { size: 12 })
+      : svgIcon('M5.5 2v7M2 5.5h7', { size: 12, strokeWidth: 1.6 })
+  );
+  linkEdit.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const next = window.prompt(
+      activity.link ? 'Edit link (leave empty to remove):' : 'Add link (URL):',
+      activity.link || ''
+    );
+    if (next === null) return;
+    setActivityLink(place.id, activity.id, next);
+  });
+  actions.appendChild(linkEdit);
+
+  if (activity.link) {
+    const open = document.createElement('a');
+    open.href = activity.link;
+    open.target = '_blank';
+    open.rel = 'noopener noreferrer';
+    open.className = 'activity-link';
+    open.title = activity.link;
+    open.setAttribute('aria-label', 'Open link in new tab');
+    open.appendChild(svgIcon('M4 3h5v5M9 3L4 8M3 6v3h3', { size: 12 }));
+    open.addEventListener('click', (e) => e.stopPropagation());
+    actions.appendChild(open);
+  }
+
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'activity-del';
+  del.setAttribute('aria-label', 'Remove activity');
+  del.textContent = '×';
+  del.addEventListener('click', (e) => {
+    e.stopPropagation();
+    removeActivity(place.id, activity.id);
+  });
+  actions.appendChild(del);
+
+  li.append(check, text, actions);
+  return li;
+}
+
+function svgIcon(path, { size = 12, strokeWidth = 1.5, className = '' } = {}) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 12 12');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('aria-hidden', 'true');
+  if (className) svg.setAttribute('class', className);
+  const p = document.createElementNS(NS, 'path');
+  p.setAttribute('d', path);
+  p.setAttribute('fill', 'none');
+  p.setAttribute('stroke', 'currentColor');
+  p.setAttribute('stroke-width', String(strokeWidth));
+  p.setAttribute('stroke-linecap', 'round');
+  p.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(p);
+  return svg;
+}
+
+const TRANSPORT_MODES = [
+  { id: 'flight', label: 'Flight', icon: '✈' },
+  { id: 'train', label: 'Train', icon: '🚆' },
+  { id: 'bus', label: 'Bus', icon: '🚌' },
+  { id: 'car', label: 'Car', icon: '🚗' },
+  { id: 'ferry', label: 'Ferry', icon: '⛴' },
+  { id: 'walk', label: 'Walk', icon: '🚶' },
+  { id: 'bike', label: 'Bike', icon: '🚲' },
+];
+
+function transportModeMeta(modeId) {
+  return TRANSPORT_MODES.find((m) => m.id === modeId) || TRANSPORT_MODES[0];
+}
+
+function renderPlaceGap(trip, index) {
+  const nextPlace = trip.places[index];
+  const transport = nextPlace && nextPlace.transportTo ? nextPlace.transportTo : null;
+  const isActive = gapAction && gapAction.index === index;
+
+  const gap = document.createElement('div');
+  gap.className = 'place-gap';
+  if (isActive) gap.classList.add('active');
+  if (transport) gap.classList.add('has-transport');
+  gap.dataset.gapIndex = String(index);
+
+  if (isActive && gapAction.mode === 'place') {
+    gap.appendChild(renderInlineAddPlace(index));
+    return gap;
+  }
+  if (isActive && gapAction.mode === 'transport') {
+    gap.appendChild(renderTransportForm(nextPlace, transport));
+    return gap;
+  }
+
+  const left = document.createElement('span');
+  left.className = 'gap-line';
+  const right = document.createElement('span');
+  right.className = 'gap-line';
+
+  const center = document.createElement('div');
+  center.className = 'gap-center';
+
+  if (transport) {
+    center.appendChild(renderTransportSummary(nextPlace, transport));
+  }
+
+  const plus = document.createElement('button');
+  plus.type = 'button';
+  plus.className = 'gap-add';
+  plus.setAttribute('aria-label', 'Add place or transport here');
+  plus.title = 'Add place or transport';
+  plus.appendChild(svgIcon('M6 2v8M2 6h8', { size: 12, strokeWidth: 1.8 }));
+  plus.addEventListener('click', (e) => {
+    e.stopPropagation();
+    gapAction = isActive && gapAction.mode === 'menu' ? null : { index, mode: 'menu' };
+    render();
+  });
+  center.appendChild(plus);
+
+  if (isActive && gapAction.mode === 'menu') {
+    center.appendChild(renderGapMenu(index, !!transport));
+  }
+
+  gap.append(left, center, right);
+  return gap;
+}
+
+function renderGapMenu(index, hasTransport) {
+  const menu = document.createElement('div');
+  menu.className = 'gap-menu';
+  menu.setAttribute('role', 'menu');
+
+  const placeBtn = document.createElement('button');
+  placeBtn.type = 'button';
+  placeBtn.className = 'gap-menu-item';
+  placeBtn.innerHTML =
+    '<span class="gap-menu-icon" aria-hidden="true">📍</span>' +
+    '<span class="gap-menu-text">' +
+    '<strong>Add place here</strong>' +
+    '<small>Insert a new stop at this position</small>' +
+    '</span>';
+  placeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    gapAction = { index, mode: 'place' };
+    focusAfterRender = `[data-gap-place-input="${index}"]`;
+    render();
+  });
+
+  const transportBtn = document.createElement('button');
+  transportBtn.type = 'button';
+  transportBtn.className = 'gap-menu-item';
+  transportBtn.innerHTML =
+    '<span class="gap-menu-icon" aria-hidden="true">✈</span>' +
+    '<span class="gap-menu-text">' +
+    `<strong>${hasTransport ? 'Edit transport' : 'Add transport'}</strong>` +
+    '<small>How you travel between these places</small>' +
+    '</span>';
+  transportBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    gapAction = { index, mode: 'transport' };
+    render();
+  });
+
+  menu.append(placeBtn, transportBtn);
+  return menu;
+}
+
+function renderTransportSummary(nextPlace, transport) {
+  const meta = transportModeMeta(transport.mode);
+  const wrap = document.createElement('div');
+  wrap.className = 'transport-chip';
+
+  const icon = document.createElement('span');
+  icon.className = 'transport-icon';
+  icon.textContent = meta.icon;
+
+  const label = document.createElement('span');
+  label.className = 'transport-label';
+  const parts = [meta.label];
+  if (transport.duration) parts.push(transport.duration);
+  label.textContent = parts.join(' · ');
+
+  wrap.append(icon, label);
+
+  if (transport.link) {
+    const open = document.createElement('a');
+    open.href = transport.link;
+    open.target = '_blank';
+    open.rel = 'noopener noreferrer';
+    open.className = 'transport-link';
+    open.title = transport.link;
+    open.setAttribute('aria-label', 'Open transport link');
+    open.appendChild(svgIcon('M4 3h5v5M9 3L4 8M3 6v3h3', { size: 11 }));
+    open.addEventListener('click', (e) => e.stopPropagation());
+    wrap.appendChild(open);
+  }
+
+  wrap.addEventListener('click', (e) => {
+    if (e.target.closest('.transport-link')) return;
+    gapAction = { index: getActiveTrip().places.indexOf(nextPlace), mode: 'transport' };
+    render();
+  });
+
+  return wrap;
+}
+
+function renderTransportForm(nextPlace, current) {
+  const form = document.createElement('form');
+  form.className = 'transport-form';
+
+  const draft = {
+    mode: (current && current.mode) || 'flight',
+    duration: (current && current.duration) || '',
+    notes: (current && current.notes) || '',
+    link: (current && current.link) || '',
+  };
+
+  const heading = document.createElement('div');
+  heading.className = 'transport-form-heading';
+  heading.textContent = current ? 'Edit transport' : 'Add transport';
+  form.appendChild(heading);
+
+  const modeRow = document.createElement('div');
+  modeRow.className = 'transport-modes';
+  TRANSPORT_MODES.forEach((m) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'transport-mode';
+    if (draft.mode === m.id) chip.classList.add('active');
+    chip.dataset.mode = m.id;
+    chip.innerHTML = `<span class="transport-mode-icon">${m.icon}</span><span class="transport-mode-label">${m.label}</span>`;
+    chip.addEventListener('click', () => {
+      draft.mode = m.id;
+      modeRow.querySelectorAll('.transport-mode').forEach((c) => {
+        c.classList.toggle('active', c.dataset.mode === m.id);
+      });
+    });
+    modeRow.appendChild(chip);
+  });
+  form.appendChild(modeRow);
+
+  const fields = document.createElement('div');
+  fields.className = 'transport-fields';
+
+  const durLbl = document.createElement('label');
+  durLbl.className = 'transport-field';
+  durLbl.innerHTML = '<span>Duration</span>';
+  const durInput = document.createElement('input');
+  durInput.type = 'text';
+  durInput.placeholder = 'e.g. 2h 30m';
+  durInput.value = draft.duration;
+  durLbl.appendChild(durInput);
+
+  const linkLbl = document.createElement('label');
+  linkLbl.className = 'transport-field';
+  linkLbl.innerHTML = '<span>Link (booking, map…)</span>';
+  const linkInput = document.createElement('input');
+  linkInput.type = 'text';
+  linkInput.placeholder = 'https://…';
+  linkInput.value = draft.link;
+  linkLbl.appendChild(linkInput);
+
+  fields.append(durLbl, linkLbl);
+  form.appendChild(fields);
+
+  const notesLbl = document.createElement('label');
+  notesLbl.className = 'transport-field full';
+  notesLbl.innerHTML = '<span>Notes</span>';
+  const notesInput = document.createElement('textarea');
+  notesInput.rows = 2;
+  notesInput.placeholder = 'Booking ref, departure terminal, anything useful…';
+  notesInput.value = draft.notes;
+  notesLbl.appendChild(notesInput);
+  form.appendChild(notesLbl);
+
+  const actions = document.createElement('div');
+  actions.className = 'transport-actions';
+
+  const left = document.createElement('div');
+  left.className = 'transport-actions-left';
+  if (current) {
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'danger';
+    del.textContent = 'Remove';
+    del.addEventListener('click', () => clearTransport(nextPlace.id));
+    left.appendChild(del);
+  }
+
+  const right = document.createElement('div');
+  right.className = 'transport-actions-right';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'ghost';
+  cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', () => {
+    gapAction = null;
+    render();
+  });
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.className = 'primary';
+  save.textContent = 'Save';
+
+  right.append(cancel, save);
+  actions.append(left, right);
+  form.appendChild(actions);
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const trimmedLink = linkInput.value.trim();
+    const transport = {
+      mode: draft.mode,
+      duration: durInput.value.trim(),
+      notes: notesInput.value.trim(),
+      link: trimmedLink
+        ? /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmedLink)
+          ? trimmedLink
+          : `https://${trimmedLink}`
+        : '',
+    };
+    setTransport(nextPlace.id, transport);
+  });
+
+  return form;
+}
+
+function renderInlineAddPlace(index) {
+  const wrap = document.createElement('div');
+  wrap.className = 'gap-place-add';
+
+  const inputWrap = document.createElement('div');
+  inputWrap.className = 'add-place-row';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Search a place to insert here…';
+  input.autocomplete = 'off';
+  input.dataset.gapPlaceInput = String(index);
+  const dropdown = document.createElement('div');
+  dropdown.className = 'suggestions';
+  dropdown.hidden = true;
+  inputWrap.append(input, dropdown);
+
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'gap-cancel';
+  cancel.setAttribute('aria-label', 'Cancel');
+  cancel.textContent = '×';
+  cancel.addEventListener('click', () => {
+    gapAction = null;
+    render();
+  });
+
+  wrap.append(inputWrap, cancel);
+
+  setupAddPlaceInput(inputWrap, input, dropdown, (place) => {
+    insertPlaceAt(index, place);
+  });
+
+  return wrap;
 }
 
 function renderPlaceEdit(place) {
@@ -868,7 +1466,7 @@ function placeDisplayDates(place, trip, idx) {
 
 // ---------- Add-place input + autocomplete ----------
 
-function setupAddPlaceInput(container, input, dropdown) {
+function setupAddPlaceInput(container, input, dropdown, onPick) {
   let debounceTimer = null;
   let lastResults = [];
 
@@ -908,7 +1506,8 @@ function setupAddPlaceInput(container, input, dropdown) {
       notes: '',
       photoUrl: null,
     };
-    addPlace(place);
+    if (typeof onPick === 'function') onPick(place);
+    else addPlace(place);
     input.value = '';
     hide();
   }
