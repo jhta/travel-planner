@@ -20,6 +20,7 @@ let selectedPlaceId = null;
 let expandedPlaceId = null;
 let gapAction = null; // { index, mode: 'menu' | 'place' | 'transport' }
 let foodSectionOpen = true;
+let lodgingEditPlaceId = null;
 let focusAfterRender = null;
 
 // ---------- Persistence ----------
@@ -128,6 +129,7 @@ function importFromFile() {
       selectedPlaceId = null;
       expandedPlaceId = null;
       gapAction = null;
+      lodgingEditPlaceId = null;
       saveState();
       if (!map) initMap();
       render();
@@ -145,6 +147,7 @@ async function reloadFromFile() {
   selectedPlaceId = null;
   expandedPlaceId = null;
   gapAction = null;
+  lodgingEditPlaceId = null;
   await loadFromFile();
   if (state.trips.length === 0) {
     startOnboarding({ initial: true });
@@ -219,6 +222,7 @@ function setActiveTrip(id) {
   selectedPlaceId = null;
   expandedPlaceId = null;
   gapAction = null;
+  lodgingEditPlaceId = null;
   saveState();
   render();
 }
@@ -286,6 +290,35 @@ function deletePlace(placeId) {
   trip.places = trip.places.filter((p) => p.id !== placeId);
   if (selectedPlaceId === placeId) selectedPlaceId = null;
   if (expandedPlaceId === placeId) expandedPlaceId = null;
+  if (lodgingEditPlaceId === placeId) lodgingEditPlaceId = null;
+  saveState();
+  render();
+}
+
+function setLodging(placeId, { url, name }) {
+  if (!url || !url.trim()) return;
+  const trip = getActiveTrip();
+  if (!trip) return;
+  const place = trip.places.find((p) => p.id === placeId);
+  if (!place) return;
+  const trimmed = url.trim();
+  const normalized = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  const trimmedName = (name || '').trim();
+  place.lodging = trimmedName ? { url: normalized, name: trimmedName } : { url: normalized };
+  lodgingEditPlaceId = null;
+  saveState();
+  render();
+}
+
+function clearLodging(placeId) {
+  const trip = getActiveTrip();
+  if (!trip) return;
+  const place = trip.places.find((p) => p.id === placeId);
+  if (!place) return;
+  delete place.lodging;
+  if (lodgingEditPlaceId === placeId) lodgingEditPlaceId = null;
   saveState();
   render();
 }
@@ -564,6 +597,9 @@ function renderSidebar() {
     renderChecklist(trip, 'packing', 'Packing list', 'e.g. Charger, sunscreen, adapter…')
   );
   root.appendChild(renderFoods(trip));
+
+  const modal = renderLodgingModal();
+  if (modal) root.appendChild(modal);
 }
 
 function renderFlights(trip) {
@@ -1006,6 +1042,8 @@ function renderPlaceCard(place, idx) {
   row.append(thumb, info, editBtn);
   card.appendChild(row);
 
+  card.appendChild(renderLodgingSlot(place));
+
   if (editingPlaceId === place.id) {
     card.appendChild(renderPlaceEdit(place));
   } else if (expandedPlaceId === place.id) {
@@ -1013,6 +1051,193 @@ function renderPlaceCard(place, idx) {
   }
 
   return card;
+}
+
+function renderLodgingSlot(place) {
+  if (place.lodging && place.lodging.url) {
+    return renderLodgingFilled(place);
+  }
+  return renderLodgingEmpty(place);
+}
+
+function renderLodgingEmpty(place) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'place-lodging empty';
+  btn.setAttribute('aria-label', `Add hotel for ${place.name}`);
+  btn.innerHTML = `
+    <span class="lodging-icon" aria-hidden="true">🏨</span>
+    <span class="lodging-empty-text">Add hotel</span>
+    <span class="lodging-empty-plus" aria-hidden="true">+</span>
+  `;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openLodgingModal(place.id);
+  });
+  return btn;
+}
+
+function renderLodgingFilled(place) {
+  const wrap = document.createElement('div');
+  wrap.className = 'place-lodging filled';
+
+  const link = document.createElement('a');
+  link.href = place.lodging.url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.className = 'lodging-link';
+  link.title = place.lodging.url;
+
+  const icon = document.createElement('span');
+  icon.className = 'lodging-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '🏨';
+
+  const text = document.createElement('span');
+  text.className = 'lodging-text';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'lodging-name';
+  let host = '';
+  try { host = new URL(place.lodging.url).hostname.replace(/^www\./, ''); } catch {}
+  nameEl.textContent = place.lodging.name || host || 'Hotel';
+  text.appendChild(nameEl);
+  if (place.lodging.name && host) {
+    const hostEl = document.createElement('span');
+    hostEl.className = 'lodging-host';
+    hostEl.textContent = host;
+    text.appendChild(hostEl);
+  }
+
+  const arrow = svgIcon('M4 3h5v5M9 3L4 8M3 6v3h3', { size: 12, className: 'lodging-arrow' });
+
+  link.append(icon, text, arrow);
+  link.addEventListener('click', (e) => e.stopPropagation());
+  wrap.appendChild(link);
+
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'lodging-edit';
+  edit.setAttribute('aria-label', 'Edit hotel');
+  edit.title = 'Edit hotel';
+  edit.appendChild(svgIcon('M2 9l5-5 1 1-5 5H2zM6 4l1-1 1 1', { size: 12 }));
+  edit.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openLodgingModal(place.id);
+  });
+  wrap.appendChild(edit);
+
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'lodging-del';
+  del.setAttribute('aria-label', 'Remove hotel');
+  del.title = 'Remove hotel';
+  del.textContent = '×';
+  del.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (confirm(`Remove hotel for ${place.name}?`)) clearLodging(place.id);
+  });
+  wrap.appendChild(del);
+
+  return wrap;
+}
+
+function openLodgingModal(placeId) {
+  lodgingEditPlaceId = placeId;
+  focusAfterRender = '[data-lodging-url]';
+  render();
+}
+
+function closeLodgingModal() {
+  lodgingEditPlaceId = null;
+  render();
+}
+
+function renderLodgingModal() {
+  const trip = getActiveTrip();
+  if (!trip) return null;
+  const place = trip.places.find((p) => p.id === lodgingEditPlaceId);
+  if (!place) return null;
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'lodging-modal-backdrop';
+  backdrop.addEventListener('click', () => closeLodgingModal());
+
+  const form = document.createElement('form');
+  form.className = 'lodging-modal';
+  form.addEventListener('click', (e) => e.stopPropagation());
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'lodging-modal-close';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.textContent = '×';
+  closeBtn.addEventListener('click', () => closeLodgingModal());
+
+  const iconWrap = document.createElement('div');
+  iconWrap.className = 'lodging-modal-icon';
+  iconWrap.textContent = '🏨';
+
+  const title = document.createElement('h2');
+  title.className = 'lodging-modal-title';
+  title.textContent = `Where are you staying in ${place.name}?`;
+
+  const urlField = document.createElement('label');
+  urlField.className = 'lodging-modal-field primary';
+  const urlInput = document.createElement('input');
+  urlInput.type = 'text';
+  urlInput.placeholder = 'https://…';
+  urlInput.required = true;
+  urlInput.dataset.lodgingUrl = '1';
+  urlInput.autocomplete = 'off';
+  urlInput.value = (place.lodging && place.lodging.url) || '';
+  const urlHint = document.createElement('small');
+  urlHint.textContent = 'Booking link, hotel site, or Google Maps';
+  urlField.append(urlInput, urlHint);
+
+  const nameField = document.createElement('label');
+  nameField.className = 'lodging-modal-field';
+  const nameLabel = document.createElement('span');
+  nameLabel.textContent = 'Name (optional)';
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Hotel Artemide';
+  nameInput.autocomplete = 'off';
+  nameInput.value = (place.lodging && place.lodging.name) || '';
+  nameField.append(nameLabel, nameInput);
+
+  const actions = document.createElement('div');
+  actions.className = 'lodging-modal-actions';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'ghost';
+  cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', () => closeLodgingModal());
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.className = 'primary';
+  save.textContent = 'Save';
+  save.disabled = !urlInput.value.trim();
+  actions.append(cancel, save);
+
+  urlInput.addEventListener('input', () => {
+    save.disabled = !urlInput.value.trim();
+  });
+  urlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (urlInput.value.trim()) nameInput.focus();
+    }
+  });
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!urlInput.value.trim()) return;
+    setLodging(place.id, { url: urlInput.value, name: nameInput.value });
+  });
+
+  form.append(closeBtn, iconWrap, title, urlField, nameField, actions);
+  backdrop.appendChild(form);
+  return backdrop;
 }
 
 function renderActivityPill(place) {
@@ -2457,6 +2682,9 @@ function bindGlobalEvents() {
   document.getElementById('reload-btn').addEventListener('click', reloadFromFile);
   document.getElementById('new-trip-btn').addEventListener('click', () => {
     startOnboarding({ initial: false });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && lodgingEditPlaceId) closeLodgingModal();
   });
 }
 
