@@ -19,6 +19,7 @@ let editingPlaceId = null;
 let selectedPlaceId = null;
 let expandedPlaceId = null;
 let gapAction = null; // { index, mode: 'menu' | 'place' | 'transport' }
+let foodSectionOpen = true;
 let focusAfterRender = null;
 
 // ---------- Persistence ----------
@@ -193,6 +194,7 @@ function ensureTripFields(trip) {
   if (!trip.flights.inbound) trip.flights.inbound = { number: '', booking: '' };
   if (!Array.isArray(trip.documents)) trip.documents = [];
   if (!Array.isArray(trip.packing)) trip.packing = [];
+  if (!Array.isArray(trip.foods)) trip.foods = [];
   if (Array.isArray(trip.places)) {
     trip.places.forEach((p) => {
       if (!Array.isArray(p.activities)) p.activities = [];
@@ -336,6 +338,42 @@ function setActivityLink(placeId, activityId, rawUrl) {
     delete a.link;
   } else {
     a.link = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  }
+  saveState();
+  render();
+}
+
+function addFood(name) {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const trip = getActiveTrip();
+  if (!trip) return;
+  if (!Array.isArray(trip.foods)) trip.foods = [];
+  trip.foods.push({ id: newId('f'), name: trimmed, imageUrl: null });
+  foodSectionOpen = true;
+  focusAfterRender = '[data-add-food]';
+  saveState();
+  render();
+}
+
+function removeFood(foodId) {
+  const trip = getActiveTrip();
+  if (!trip || !Array.isArray(trip.foods)) return;
+  trip.foods = trip.foods.filter((f) => f.id !== foodId);
+  saveState();
+  render();
+}
+
+function setFoodLink(foodId, rawUrl) {
+  const trip = getActiveTrip();
+  if (!trip || !Array.isArray(trip.foods)) return;
+  const food = trip.foods.find((f) => f.id === foodId);
+  if (!food) return;
+  const trimmed = (rawUrl || '').trim();
+  if (!trimmed) {
+    delete food.link;
+  } else {
+    food.link = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   }
   saveState();
   render();
@@ -525,6 +563,7 @@ function renderSidebar() {
   root.appendChild(
     renderChecklist(trip, 'packing', 'Packing list', 'e.g. Charger, sunscreen, adapter…')
   );
+  root.appendChild(renderFoods(trip));
 }
 
 function renderFlights(trip) {
@@ -660,6 +699,154 @@ function renderChecklist(trip, key, title, addPlaceholder) {
   wrap.appendChild(form);
 
   return wrap;
+}
+
+function renderFoods(trip) {
+  const foods = Array.isArray(trip.foods) ? trip.foods : [];
+  const wrap = document.createElement('section');
+  wrap.className = 'trip-section food-section';
+  if (foodSectionOpen) wrap.classList.add('open');
+
+  const header = document.createElement('button');
+  header.type = 'button';
+  header.className = 'food-header';
+  header.setAttribute('aria-expanded', String(foodSectionOpen));
+
+  const headLeft = document.createElement('span');
+  headLeft.className = 'food-header-left';
+  const titleEl = document.createElement('h3');
+  titleEl.className = 'section-title';
+  titleEl.textContent = 'Food & drinks';
+  const count = document.createElement('span');
+  count.className = 'food-count';
+  count.textContent = foods.length ? String(foods.length) : '';
+  headLeft.append(titleEl, count);
+
+  const chev = svgIcon('M3 4.5l3 3 3-3', { className: 'food-chev', size: 14 });
+
+  header.append(headLeft, chev);
+  header.addEventListener('click', () => {
+    foodSectionOpen = !foodSectionOpen;
+    render();
+  });
+  wrap.appendChild(header);
+
+  if (!foodSectionOpen) return wrap;
+
+  const body = document.createElement('div');
+  body.className = 'food-body';
+
+  if (foods.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'food-empty';
+    empty.textContent = 'No food picks yet — what should you taste on this trip?';
+    body.appendChild(empty);
+  } else {
+    const list = document.createElement('ul');
+    list.className = 'food-list';
+    foods.forEach((food) => list.appendChild(renderFoodItem(food)));
+    body.appendChild(list);
+  }
+
+  const form = document.createElement('form');
+  form.className = 'food-add';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Add a dish, drink, or restaurant…';
+  input.dataset.addFood = '1';
+  input.autocomplete = 'off';
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.className = 'food-add-btn';
+  submit.textContent = 'Add';
+  form.append(input, submit);
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    addFood(input.value);
+    input.value = '';
+  });
+  body.appendChild(form);
+
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function renderFoodItem(food) {
+  const li = document.createElement('li');
+  li.className = 'food-item';
+  if (food.link) li.classList.add('has-link');
+  li.dataset.foodId = food.id;
+
+  const thumb = document.createElement('div');
+  thumb.className = 'food-thumb';
+  applyFoodImage(thumb, food);
+
+  const info = document.createElement('div');
+  info.className = 'food-info';
+  const name = document.createElement('span');
+  name.className = 'food-name';
+  name.textContent = food.name;
+  info.appendChild(name);
+  if (food.link) {
+    try {
+      const u = new URL(food.link);
+      const host = document.createElement('span');
+      host.className = 'food-host';
+      host.textContent = u.hostname.replace(/^www\./, '');
+      info.appendChild(host);
+    } catch {}
+  }
+
+  const actions = document.createElement('span');
+  actions.className = 'food-actions';
+
+  const linkEdit = document.createElement('button');
+  linkEdit.type = 'button';
+  linkEdit.className = 'food-link-edit';
+  linkEdit.setAttribute('aria-label', food.link ? 'Edit link' : 'Add link');
+  linkEdit.title = food.link ? 'Edit link' : 'Add link';
+  linkEdit.appendChild(
+    food.link
+      ? svgIcon('M2 9l5-5 1 1-5 5H2zM6 4l1-1 1 1', { size: 12 })
+      : svgIcon('M5.5 2v7M2 5.5h7', { size: 12, strokeWidth: 1.6 })
+  );
+  linkEdit.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const next = window.prompt(
+      food.link ? 'Edit link (leave empty to remove):' : 'Add link (URL):',
+      food.link || ''
+    );
+    if (next === null) return;
+    setFoodLink(food.id, next);
+  });
+  actions.appendChild(linkEdit);
+
+  if (food.link) {
+    const open = document.createElement('a');
+    open.href = food.link;
+    open.target = '_blank';
+    open.rel = 'noopener noreferrer';
+    open.className = 'food-link';
+    open.title = food.link;
+    open.setAttribute('aria-label', 'Open link in new tab');
+    open.appendChild(svgIcon('M4 3h5v5M9 3L4 8M3 6v3h3', { size: 12 }));
+    open.addEventListener('click', (e) => e.stopPropagation());
+    actions.appendChild(open);
+  }
+
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'food-del';
+  del.setAttribute('aria-label', 'Remove food');
+  del.textContent = '×';
+  del.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (confirm(`Remove "${food.name}"?`)) removeFood(food.id);
+  });
+  actions.appendChild(del);
+
+  li.append(thumb, info, actions);
+  return li;
 }
 
 function renderTripDisplay(trip) {
@@ -1410,6 +1597,36 @@ function applyPhoto(thumb, place) {
       `[data-place-id="${place.id}"] .thumb`
     );
     if (stillThumb) applyPhoto(stillThumb, place);
+  });
+}
+
+function foodStillExists(foodId) {
+  return state.trips.some(
+    (t) => Array.isArray(t.foods) && t.foods.some((f) => f.id === foodId)
+  );
+}
+
+function applyFoodImage(thumb, food) {
+  thumb.innerHTML = '';
+  thumb.classList.remove('loading');
+  if (food.imageUrl) {
+    const img = document.createElement('img');
+    img.src = food.imageUrl;
+    img.alt = food.name;
+    img.loading = 'lazy';
+    thumb.appendChild(img);
+    return;
+  }
+  if (food.imageUrl === '') return;
+  thumb.classList.add('loading');
+  fetchWikipediaImage(food.name).then((url) => {
+    if (!foodStillExists(food.id)) return;
+    food.imageUrl = url || '';
+    saveState();
+    const stillThumb = document.querySelector(
+      `[data-food-id="${food.id}"] .food-thumb`
+    );
+    if (stillThumb) applyFoodImage(stillThumb, food);
   });
 }
 

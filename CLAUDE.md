@@ -33,9 +33,9 @@ The whole app is four files at the repo root: `index.html`, `styles.css`, `app.j
 
 ### State and persistence (app.js)
 
-- Single module-level `state = { trips, activeTripId }` plus UI scalars: `editingPlaceId`, `selectedPlaceId`, `expandedPlaceId`, `gapAction` (`{ index, mode: 'menu' | 'place' | 'transport' }`), `tripEditing`, `focusAfterRender`, and Leaflet layer handles (`map`, `markersLayer`, `polylineLayer`, `arrowsLayer`, `placeMarkers`).
+- Single module-level `state = { trips, activeTripId }` plus UI scalars: `editingPlaceId`, `selectedPlaceId`, `expandedPlaceId`, `gapAction` (`{ index, mode: 'menu' | 'place' | 'transport' }`), `tripEditing`, `foodSectionOpen`, `focusAfterRender`, and Leaflet layer handles (`map`, `markersLayer`, `polylineLayer`, `arrowsLayer`, `placeMarkers`).
 - `loadState()` reads `localStorage[STORAGE_KEY]` first; only falls back to `fetch('trips.json')` if storage is empty/corrupt. Every mutation calls `saveState()` which writes back to `localStorage`. `trips.json` on disk is just the seed/snapshot — the Export button downloads current state as `trips.json`, the Reload button clears localStorage and re-fetches the file.
-- Trip shape: `{ id, name, startDate, endDate, flights, documents[], packing[], places: [...] }`. Place shape: `{ id, name, lat, lng, arrival, departure, notes, photoUrl, activities?: [{ id, text, done, link? }], transportTo?: { mode, duration, notes, link } }`. `photoUrl` tri-state: `null` = not fetched, `''` = fetched but no photo found (don't retry), string URL = use it.
+- Trip shape: `{ id, name, startDate, endDate, flights, documents[], packing[], foods[], places: [...] }`. Place shape: `{ id, name, lat, lng, arrival, departure, notes, photoUrl, activities?: [{ id, text, done, link? }], transportTo?: { mode, duration, notes, link } }`. Food shape: `{ id, name, imageUrl, link? }`. `photoUrl` and `imageUrl` share the same tri-state: `null` = not fetched, `''` = fetched but no photo found (don't retry), string URL = use it.
 - `transportTo` lives on the **destination** place (i.e. `places[i+1].transportTo` describes how you got from `places[i]` to `places[i+1]`).
 
 ### Adding new persistent fields
