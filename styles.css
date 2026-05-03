@@ -1085,6 +1085,13 @@ textarea { resize: vertical; font-family: inherit; }
   border-color: var(--accent);
 }
 
+.activity-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
 .activity-text {
   font-size: 14px;
   color: var(--fg);
@@ -1097,6 +1104,33 @@ textarea { resize: vertical; font-family: inherit; }
   color: var(--fg-muted);
   text-decoration: line-through;
   text-decoration-thickness: 1.5px;
+}
+
+.activity-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.activity-day-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.activity-note-flag {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-muted);
+  cursor: help;
 }
 
 .activity-del,
@@ -1142,10 +1176,16 @@ textarea { resize: vertical; font-family: inherit; }
 .activity-link:hover { background: var(--accent-soft); color: var(--accent); }
 
 .activity-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.activity-add-main {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 8px;
-  margin-top: 4px;
 }
 
 .activity-add input[type="text"] {
@@ -1177,6 +1217,77 @@ textarea { resize: vertical; font-family: inherit; }
 }
 
 .activity-add-btn:hover { filter: brightness(1.05); }
+
+.activity-add-extras {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.activity-add-extra {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  transition: border-color 0.15s, background 0.15s;
+  min-width: 0;
+}
+
+.activity-add-extra:focus-within {
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--bg-elev);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.activity-add-extra.disabled { opacity: 0.55; }
+
+.activity-add-extra-icon {
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.activity-add-extra input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--fg);
+  font-family: inherit;
+  min-width: 0;
+}
+
+.activity-add-extra input:focus { outline: none; }
+
+.activity-add-extra input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.activity-add-extra input[type="date"]:disabled {
+  cursor: not-allowed;
+}
+
+.activity-add-error {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger);
+  background: var(--accent-soft);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 6px 10px;
+  animation: body-in 0.18s ease both;
+}
+
+@media (max-width: 700px) {
+  .activity-add-extras { grid-template-columns: 1fr; }
+}
 
 .place-edit {
   padding: 16px;
@@ -2205,9 +2316,10 @@ body.onboarding-active .app-main { display: none; }
 .lodging-edit:hover { color: var(--fg); background: var(--bg-elev); }
 .lodging-del:hover { color: var(--danger); background: var(--bg-elev); }
 
-/* Modal */
+/* Modal — shared shell between lodging and activity modals */
 
-.lodging-modal-backdrop {
+.lodging-modal-backdrop,
+.activity-modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(3, 17, 9, 0.55);
@@ -2217,15 +2329,16 @@ body.onboarding-active .app-main { display: none; }
   align-items: center;
   justify-content: center;
   padding: 24px;
-  animation: lodging-backdrop-in 0.18s ease both;
+  animation: dialog-backdrop-in 0.18s ease both;
 }
 
-@keyframes lodging-backdrop-in {
+@keyframes dialog-backdrop-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-.lodging-modal {
+.lodging-modal,
+.activity-modal {
   position: relative;
   width: 100%;
   max-width: 520px;
@@ -2237,15 +2350,16 @@ body.onboarding-active .app-main { display: none; }
   display: flex;
   flex-direction: column;
   gap: 18px;
-  animation: lodging-modal-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  animation: dialog-card-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
 }
 
-@keyframes lodging-modal-in {
+@keyframes dialog-card-in {
   from { opacity: 0; transform: translateY(12px) scale(0.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.lodging-modal-close {
+.lodging-modal-close,
+.activity-modal-close {
   position: absolute;
   top: 12px;
   right: 12px;
@@ -2261,15 +2375,18 @@ body.onboarding-active .app-main { display: none; }
   padding: 0;
 }
 
-.lodging-modal-close:hover { color: var(--fg); background: var(--bg); }
+.lodging-modal-close:hover,
+.activity-modal-close:hover { color: var(--fg); background: var(--bg); }
 
-.lodging-modal-icon {
+.lodging-modal-icon,
+.activity-modal-icon {
   font-size: 36px;
   line-height: 1;
   text-align: center;
 }
 
-.lodging-modal-title {
+.lodging-modal-title,
+.activity-modal-title {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
@@ -2278,13 +2395,15 @@ body.onboarding-active .app-main { display: none; }
   color: var(--fg);
 }
 
-.lodging-modal-field {
+.lodging-modal-field,
+.activity-modal-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.lodging-modal-field > span {
+.lodging-modal-field > span,
+.activity-modal-field > span {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -2292,7 +2411,10 @@ body.onboarding-active .app-main { display: none; }
   font-weight: 600;
 }
 
-.lodging-modal-field input[type="text"] {
+.lodging-modal-field input[type="text"],
+.activity-modal-field input[type="text"],
+.activity-modal-field input[type="date"],
+.activity-modal-field textarea {
   font-family: inherit;
   font-size: 14px;
   color: var(--fg);
@@ -2302,14 +2424,19 @@ body.onboarding-active .app-main { display: none; }
   background: var(--bg);
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
+  resize: vertical;
 }
 
-.lodging-modal-field input[type="text"]:focus {
+.lodging-modal-field input[type="text"]:focus,
+.activity-modal-field input[type="text"]:focus,
+.activity-modal-field input[type="date"]:focus,
+.activity-modal-field textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.lodging-modal-field.primary input[type="text"] {
+.lodging-modal-field.primary input[type="text"],
+.activity-modal-field.primary input[type="text"] {
   font-size: 18px;
   padding: 14px 16px;
   border-width: 1.5px;
@@ -2317,42 +2444,66 @@ body.onboarding-active .app-main { display: none; }
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.lodging-modal-field small {
+.lodging-modal-field small,
+.activity-modal-field small {
   font-size: 12px;
   color: var(--fg-muted);
 }
 
-.lodging-modal-actions {
+.activity-modal-field input[type="date"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.activity-modal-error {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger);
+  background: var(--accent-soft);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 8px 12px;
+  animation: body-in 0.2s ease both;
+}
+
+.lodging-modal-actions,
+.activity-modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 4px;
 }
 
-.lodging-modal-actions button { padding: 10px 18px; border-radius: 10px; }
-.lodging-modal-actions .primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.lodging-modal-actions button,
+.activity-modal-actions button { padding: 10px 18px; border-radius: 10px; }
+.lodging-modal-actions .primary:disabled,
+.activity-modal-actions .primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* Bottom-sheet variant on phones */
 @media (max-width: 600px) {
-  .lodging-modal-backdrop {
+  .lodging-modal-backdrop,
+  .activity-modal-backdrop {
     padding: 0;
     align-items: flex-end;
     overflow-y: auto;
   }
-  .lodging-modal {
+  .lodging-modal,
+  .activity-modal {
     width: 100%;
     max-width: 100%;
     padding: 24px 18px max(18px, env(safe-area-inset-bottom, 0));
     border-radius: 18px 18px 0 0;
     border-bottom: none;
     gap: 16px;
-    animation: lodging-sheet-up 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+    animation: dialog-sheet-up 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
   }
-  @keyframes lodging-sheet-up {
+  @keyframes dialog-sheet-up {
     from { transform: translateY(100%); opacity: 0.7; }
     to { transform: translateY(0); opacity: 1; }
   }
-  .lodging-modal::before {
+  .lodging-modal::before,
+  .activity-modal::before {
     content: '';
     display: block;
     width: 40px;
@@ -2361,21 +2512,30 @@ body.onboarding-active .app-main { display: none; }
     background: var(--border);
     margin: -10px auto 4px;
   }
-  .lodging-modal-icon { font-size: 30px; }
-  .lodging-modal-title { font-size: 18px; line-height: 1.25; }
+  .lodging-modal-icon,
+  .activity-modal-icon { font-size: 30px; }
+  .lodging-modal-title,
+  .activity-modal-title { font-size: 18px; line-height: 1.25; }
   /* iOS Safari zooms when input font-size < 16px — keep all inputs at 16px+ */
-  .lodging-modal-field input[type="text"] { font-size: 16px; }
-  .lodging-modal-field.primary input[type="text"] { font-size: 17px; padding: 13px 14px; }
-  .lodging-modal-actions {
+  .lodging-modal-field input[type="text"],
+  .activity-modal-field input[type="text"],
+  .activity-modal-field input[type="date"],
+  .activity-modal-field textarea { font-size: 16px; }
+  .lodging-modal-field.primary input[type="text"],
+  .activity-modal-field.primary input[type="text"] { font-size: 17px; padding: 13px 14px; }
+  .lodging-modal-actions,
+  .activity-modal-actions {
     flex-direction: column-reverse;
     gap: 10px;
   }
-  .lodging-modal-actions button {
+  .lodging-modal-actions button,
+  .activity-modal-actions button {
     width: 100%;
     padding: 13px 18px;
     font-size: 15px;
   }
-  .lodging-modal-close {
+  .lodging-modal-close,
+  .activity-modal-close {
     top: 16px;
     right: 14px;
     width: 36px;

@@ -21,6 +21,7 @@ let expandedPlaceId = null;
 let gapAction = null; // { index, mode: 'menu' | 'place' | 'transport' }
 let foodSectionOpen = true;
 let lodgingEditPlaceId = null;
+let activityEditId = null; // { placeId, activityId } | null
 let viewMode = 'stops'; // 'stops' | 'days'
 let focusAfterRender = null;
 
@@ -131,6 +132,7 @@ function importFromFile() {
       expandedPlaceId = null;
       gapAction = null;
       lodgingEditPlaceId = null;
+      activityEditId = null;
       saveState();
       if (!map) initMap();
       render();
@@ -224,6 +226,7 @@ function setActiveTrip(id) {
   expandedPlaceId = null;
   gapAction = null;
   lodgingEditPlaceId = null;
+  activityEditId = null;
   saveState();
   render();
 }
@@ -292,6 +295,7 @@ function deletePlace(placeId) {
   if (selectedPlaceId === placeId) selectedPlaceId = null;
   if (expandedPlaceId === placeId) expandedPlaceId = null;
   if (lodgingEditPlaceId === placeId) lodgingEditPlaceId = null;
+  if (activityEditId && activityEditId.placeId === placeId) activityEditId = null;
   saveState();
   render();
 }
@@ -309,6 +313,7 @@ function setLodging(placeId, { url, name }) {
   const trimmedName = (name || '').trim();
   place.lodging = trimmedName ? { url: normalized, name: trimmedName } : { url: normalized };
   lodgingEditPlaceId = null;
+  activityEditId = null;
   saveState();
   render();
 }
@@ -324,18 +329,37 @@ function clearLodging(placeId) {
   render();
 }
 
-function addActivity(placeId, text) {
-  const trimmed = text.trim();
-  if (!trimmed) return;
+function addActivity(placeId, payload) {
+  const data = typeof payload === 'string' ? { text: payload } : (payload || {});
+  const text = (data.text || '').trim();
+  if (!text) return { ok: false, error: 'Text is required.' };
   const trip = getActiveTrip();
-  if (!trip) return;
+  if (!trip) return { ok: false, error: 'No active trip.' };
   const place = trip.places.find((p) => p.id === placeId);
-  if (!place) return;
+  if (!place) return { ok: false, error: 'Place not found.' };
   if (!Array.isArray(place.activities)) place.activities = [];
-  place.activities.push({ id: newId('a'), text: trimmed, done: false });
+
+  const day = (data.day || '').trim();
+  if (day) {
+    const err = validateActivityDay(day, trip.startDate || '', trip.endDate || '');
+    if (err) return { ok: false, error: err };
+  }
+
+  const rawLink = (data.link || '').trim();
+  const link = rawLink
+    ? /^[a-z][a-z0-9+.-]*:\/\//i.test(rawLink) ? rawLink : `https://${rawLink}`
+    : '';
+
+  const activity = { id: newId('a'), text, done: false };
+  if (day) activity.day = day;
+  if (link) activity.link = link;
+  if (data.notes && data.notes.trim()) activity.notes = data.notes.trim();
+
+  place.activities.push(activity);
   focusAfterRender = `[data-add-activity="${placeId}"]`;
   saveState();
   render();
+  return { ok: true };
 }
 
 function toggleActivity(placeId, activityId) {
@@ -356,6 +380,24 @@ function removeActivity(placeId, activityId) {
   const place = trip.places.find((p) => p.id === placeId);
   if (!place || !Array.isArray(place.activities)) return;
   place.activities = place.activities.filter((x) => x.id !== activityId);
+  if (activityEditId && activityEditId.activityId === activityId) activityEditId = null;
+  saveState();
+  render();
+}
+
+function updateActivity(placeId, activityId, updates) {
+  const trip = getActiveTrip();
+  if (!trip) return;
+  const place = trip.places.find((p) => p.id === placeId);
+  if (!place || !Array.isArray(place.activities)) return;
+  const a = place.activities.find((x) => x.id === activityId);
+  if (!a) return;
+  Object.assign(a, updates);
+  // Strip empty optional fields so JSON stays clean
+  if (!a.link) delete a.link;
+  if (!a.day) delete a.day;
+  if (!a.notes) delete a.notes;
+  activityEditId = null;
   saveState();
   render();
 }
@@ -608,8 +650,10 @@ function renderSidebar() {
   );
   root.appendChild(renderFoods(trip));
 
-  const modal = renderLodgingModal();
-  if (modal) root.appendChild(modal);
+  const lodgingModal = renderLodgingModal();
+  if (lodgingModal) root.appendChild(lodgingModal);
+  const activityModal = renderActivityModal();
+  if (activityModal) root.appendChild(activityModal);
 }
 
 function renderFlights(trip) {
@@ -1250,6 +1294,178 @@ function renderLodgingModal() {
   return backdrop;
 }
 
+function openActivityModal(placeId, activityId) {
+  activityEditId = { placeId, activityId };
+  focusAfterRender = '[data-activity-text]';
+  render();
+}
+
+function closeActivityModal() {
+  activityEditId = null;
+  render();
+}
+
+function renderActivityModal() {
+  if (!activityEditId) return null;
+  const trip = getActiveTrip();
+  if (!trip) return null;
+  const place = trip.places.find((p) => p.id === activityEditId.placeId);
+  if (!place || !Array.isArray(place.activities)) return null;
+  const activity = place.activities.find((a) => a.id === activityEditId.activityId);
+  if (!activity) return null;
+
+  const tripStart = trip.startDate || '';
+  const tripEnd = trip.endDate || '';
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'activity-modal-backdrop';
+  backdrop.addEventListener('click', () => closeActivityModal());
+
+  const form = document.createElement('form');
+  form.className = 'activity-modal';
+  form.addEventListener('click', (e) => e.stopPropagation());
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'activity-modal-close';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.textContent = '×';
+  closeBtn.addEventListener('click', () => closeActivityModal());
+
+  const iconWrap = document.createElement('div');
+  iconWrap.className = 'activity-modal-icon';
+  iconWrap.textContent = '✨';
+
+  const title = document.createElement('h2');
+  title.className = 'activity-modal-title';
+  title.textContent = `Activity in ${place.name}`;
+
+  // Text (required, primary)
+  const textField = document.createElement('label');
+  textField.className = 'activity-modal-field primary';
+  const textInput = document.createElement('input');
+  textInput.type = 'text';
+  textInput.placeholder = 'Visit Colosseum';
+  textInput.required = true;
+  textInput.dataset.activityText = '1';
+  textInput.autocomplete = 'off';
+  textInput.value = activity.text || '';
+  const textHint = document.createElement('small');
+  textHint.textContent = 'What you want to do';
+  textField.append(textInput, textHint);
+
+  // Day (optional)
+  const dayField = document.createElement('label');
+  dayField.className = 'activity-modal-field';
+  const dayLabel = document.createElement('span');
+  dayLabel.textContent = tripStart && tripEnd ? 'Day (optional)' : 'Day (set trip dates first)';
+  const dayInput = document.createElement('input');
+  dayInput.type = 'date';
+  dayInput.value = activity.day || '';
+  if (tripStart) dayInput.min = tripStart;
+  if (tripEnd) dayInput.max = tripEnd;
+  if (!tripStart || !tripEnd) dayInput.disabled = true;
+  dayField.append(dayLabel, dayInput);
+
+  // Link (optional)
+  const linkField = document.createElement('label');
+  linkField.className = 'activity-modal-field';
+  const linkLabel = document.createElement('span');
+  linkLabel.textContent = 'Link (optional)';
+  const linkInput = document.createElement('input');
+  linkInput.type = 'text';
+  linkInput.placeholder = 'https://…';
+  linkInput.autocomplete = 'off';
+  linkInput.value = activity.link || '';
+  linkField.append(linkLabel, linkInput);
+
+  // Notes (optional)
+  const notesField = document.createElement('label');
+  notesField.className = 'activity-modal-field';
+  const notesLabel = document.createElement('span');
+  notesLabel.textContent = 'Notes (optional)';
+  const notesInput = document.createElement('textarea');
+  notesInput.rows = 3;
+  notesInput.placeholder = 'Booking ref, opening hours, who to meet, anything useful…';
+  notesInput.value = activity.notes || '';
+  notesField.append(notesLabel, notesInput);
+
+  // Error
+  const errorEl = document.createElement('p');
+  errorEl.className = 'activity-modal-error';
+  errorEl.hidden = true;
+  errorEl.setAttribute('role', 'alert');
+
+  // Actions
+  const actions = document.createElement('div');
+  actions.className = 'activity-modal-actions';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'ghost';
+  cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', () => closeActivityModal());
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.className = 'primary';
+  save.textContent = 'Save';
+  save.disabled = !textInput.value.trim();
+  actions.append(cancel, save);
+
+  textInput.addEventListener('input', () => {
+    save.disabled = !textInput.value.trim();
+    if (!errorEl.hidden) {
+      errorEl.hidden = true;
+      errorEl.textContent = '';
+    }
+  });
+  dayInput.addEventListener('input', () => {
+    if (!errorEl.hidden) {
+      errorEl.hidden = true;
+      errorEl.textContent = '';
+    }
+  });
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = textInput.value.trim();
+    if (!text) return;
+    const day = dayInput.value || '';
+    if (day) {
+      const err = validateActivityDay(day, tripStart, tripEnd);
+      if (err) {
+        errorEl.textContent = err;
+        errorEl.hidden = false;
+        return;
+      }
+    }
+    const rawLink = linkInput.value.trim();
+    const link = rawLink
+      ? /^[a-z][a-z0-9+.-]*:\/\//i.test(rawLink)
+        ? rawLink
+        : `https://${rawLink}`
+      : '';
+    updateActivity(place.id, activity.id, {
+      text,
+      day,
+      link,
+      notes: notesInput.value.trim(),
+    });
+  });
+
+  form.append(closeBtn, iconWrap, title, textField, dayField, linkField, notesField, errorEl, actions);
+  backdrop.appendChild(form);
+  return backdrop;
+}
+
+function validateActivityDay(day, tripStart, tripEnd) {
+  if (!tripStart || !tripEnd) {
+    return 'Set the trip start and end dates first (Edit trip).';
+  }
+  if (day < tripStart) return `Day ${formatShort(day)} is before the trip starts (${formatShort(tripStart)}).`;
+  if (day > tripEnd) return `Day ${formatShort(day)} is after the trip ends (${formatShort(tripEnd)}).`;
+  return null;
+}
+
 function renderViewToggle() {
   const wrap = document.createElement('div');
   wrap.className = 'view-toggle';
@@ -1482,32 +1698,105 @@ function renderActivities(place) {
     wrap.appendChild(list);
   }
 
-  const addRow = document.createElement('form');
-  addRow.className = 'activity-add';
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.placeholder = 'Add an activity…';
-  input.dataset.addActivity = place.id;
-  input.autocomplete = 'off';
-  const submit = document.createElement('button');
-  submit.type = 'submit';
-  submit.className = 'activity-add-btn';
-  submit.textContent = 'Add';
-  addRow.append(input, submit);
-  addRow.addEventListener('submit', (e) => {
-    e.preventDefault();
-    addActivity(place.id, input.value);
-  });
-  wrap.appendChild(addRow);
+  wrap.appendChild(renderActivityAddForm(place));
 
   return wrap;
 }
 
+function renderActivityAddForm(place) {
+  const trip = getActiveTrip();
+  const tripStart = (trip && trip.startDate) || '';
+  const tripEnd = (trip && trip.endDate) || '';
+  const datesUsable = !!(tripStart && tripEnd);
+
+  const form = document.createElement('form');
+  form.className = 'activity-add';
+
+  const main = document.createElement('div');
+  main.className = 'activity-add-main';
+  const textInput = document.createElement('input');
+  textInput.type = 'text';
+  textInput.placeholder = 'Add an activity…';
+  textInput.dataset.addActivity = place.id;
+  textInput.autocomplete = 'off';
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.className = 'activity-add-btn';
+  submit.textContent = 'Add';
+  main.append(textInput, submit);
+
+  const extras = document.createElement('div');
+  extras.className = 'activity-add-extras';
+
+  const dayWrap = document.createElement('label');
+  dayWrap.className = 'activity-add-extra';
+  const dayIcon = document.createElement('span');
+  dayIcon.className = 'activity-add-extra-icon';
+  dayIcon.textContent = '📅';
+  const dayInput = document.createElement('input');
+  dayInput.type = 'date';
+  dayInput.title = datesUsable ? 'Day (optional)' : 'Set trip dates first';
+  dayInput.disabled = !datesUsable;
+  if (tripStart) dayInput.min = tripStart;
+  if (tripEnd) dayInput.max = tripEnd;
+  dayWrap.append(dayIcon, dayInput);
+  if (!datesUsable) dayWrap.classList.add('disabled');
+
+  const linkWrap = document.createElement('label');
+  linkWrap.className = 'activity-add-extra';
+  const linkIcon = document.createElement('span');
+  linkIcon.className = 'activity-add-extra-icon';
+  linkIcon.textContent = '🔗';
+  const linkInput = document.createElement('input');
+  linkInput.type = 'text';
+  linkInput.placeholder = 'Link (optional)';
+  linkInput.autocomplete = 'off';
+  linkWrap.append(linkIcon, linkInput);
+
+  extras.append(dayWrap, linkWrap);
+
+  const error = document.createElement('p');
+  error.className = 'activity-add-error';
+  error.hidden = true;
+  error.setAttribute('role', 'alert');
+
+  form.append(main, extras, error);
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const result = addActivity(place.id, {
+      text: textInput.value,
+      day: dayInput.value,
+      link: linkInput.value,
+    });
+    if (result && !result.ok) {
+      error.textContent = result.error;
+      error.hidden = false;
+      return;
+    }
+    // success — addActivity calls render(), which rebuilds; nothing to clean up
+  });
+
+  // Clear error on edit
+  [textInput, dayInput, linkInput].forEach((el) =>
+    el.addEventListener('input', () => {
+      if (!error.hidden) {
+        error.hidden = true;
+        error.textContent = '';
+      }
+    })
+  );
+
+  return form;
+}
+
 function renderActivityItem(place, activity) {
+  const trip = getActiveTrip();
   const li = document.createElement('li');
   li.className = 'activity-item';
   if (activity.done) li.classList.add('done');
   if (activity.link) li.classList.add('has-link');
+  if (activity.notes) li.title = activity.notes;
 
   const check = document.createElement('button');
   check.type = 'button';
@@ -1517,34 +1806,46 @@ function renderActivityItem(place, activity) {
   check.textContent = activity.done ? '✓' : '';
   check.addEventListener('click', () => toggleActivity(place.id, activity.id));
 
+  const main = document.createElement('span');
+  main.className = 'activity-main';
   const text = document.createElement('span');
   text.className = 'activity-text';
   text.textContent = activity.text;
   text.addEventListener('click', () => toggleActivity(place.id, activity.id));
+  main.appendChild(text);
+
+  const tags = document.createElement('span');
+  tags.className = 'activity-tags';
+  if (activity.day && trip) {
+    const dayNum = dayNumberOf(trip, activity.day);
+    const dayPill = document.createElement('span');
+    dayPill.className = 'activity-day-pill';
+    dayPill.textContent = dayNum ? `Day ${dayNum}` : formatShort(activity.day);
+    tags.appendChild(dayPill);
+  }
+  if (activity.notes) {
+    const noteIcon = document.createElement('span');
+    noteIcon.className = 'activity-note-flag';
+    noteIcon.setAttribute('aria-label', 'Has notes');
+    noteIcon.appendChild(svgIcon('M3 2h6v8H3zM5 4h2M5 6h2M5 8h2', { size: 11, strokeWidth: 1.4 }));
+    tags.appendChild(noteIcon);
+  }
+  if (tags.children.length > 0) main.appendChild(tags);
 
   const actions = document.createElement('span');
   actions.className = 'activity-actions';
 
-  const linkEdit = document.createElement('button');
-  linkEdit.type = 'button';
-  linkEdit.className = 'activity-link-edit';
-  linkEdit.setAttribute('aria-label', activity.link ? 'Edit link' : 'Add link');
-  linkEdit.title = activity.link ? 'Edit link' : 'Add link';
-  linkEdit.appendChild(
-    activity.link
-      ? svgIcon('M2 9l5-5 1 1-5 5H2zM6 4l1-1 1 1', { size: 12 })
-      : svgIcon('M5.5 2v7M2 5.5h7', { size: 12, strokeWidth: 1.6 })
-  );
-  linkEdit.addEventListener('click', (e) => {
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'activity-link-edit';
+  editBtn.setAttribute('aria-label', 'Edit activity');
+  editBtn.title = 'Edit activity';
+  editBtn.appendChild(svgIcon('M2 9l5-5 1 1-5 5H2zM6 4l1-1 1 1', { size: 12 }));
+  editBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    const next = window.prompt(
-      activity.link ? 'Edit link (leave empty to remove):' : 'Add link (URL):',
-      activity.link || ''
-    );
-    if (next === null) return;
-    setActivityLink(place.id, activity.id, next);
+    openActivityModal(place.id, activity.id);
   });
-  actions.appendChild(linkEdit);
+  actions.appendChild(editBtn);
 
   if (activity.link) {
     const open = document.createElement('a');
@@ -1570,7 +1871,7 @@ function renderActivityItem(place, activity) {
   });
   actions.appendChild(del);
 
-  li.append(check, text, actions);
+  li.append(check, main, actions);
   return li;
 }
 
@@ -2916,7 +3217,9 @@ function bindGlobalEvents() {
     startOnboarding({ initial: false });
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && lodgingEditPlaceId) closeLodgingModal();
+    if (e.key !== 'Escape') return;
+    if (activityEditId) { closeActivityModal(); return; }
+    if (lodgingEditPlaceId) closeLodgingModal();
   });
 }
 
