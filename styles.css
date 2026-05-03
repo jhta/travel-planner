@@ -314,12 +314,209 @@ textarea { resize: vertical; font-family: inherit; }
 .suggestion:last-child { border-bottom: none; }
 .suggestion:hover { background: var(--accent-soft); }
 
+/* ---------- View toggle (Stops · Days) ---------- */
+
+.view-toggle {
+  display: inline-flex;
+  align-self: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 0;
+}
+
+.view-toggle-btn {
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  font-family: inherit;
+}
+
+.view-toggle-btn:hover { color: var(--fg); }
+
+.view-toggle-btn.active {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
 /* ---------- Places list ---------- */
 
 .places-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* ---------- Days view ---------- */
+
+.days-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.day-segment {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-elev);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+}
+
+.day-segment:hover { border-color: var(--fg-muted); }
+
+.day-segment.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow);
+}
+
+.day-segment-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  background: linear-gradient(180deg, var(--accent-soft) 0%, transparent 100%);
+}
+
+.day-segment-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.day-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.day-date {
+  font-size: 12px;
+  color: var(--fg-muted);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.day-place-row {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.day-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--gold) 100%);
+  flex-shrink: 0;
+}
+
+.day-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.day-thumb.loading { animation: shimmer 1.4s ease-in-out infinite; }
+
+.day-place-name {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.day-transport {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.day-transport-icon {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.day-transport-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.day-transport-lead {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+
+.day-transport-text strong {
+  font-size: 13px;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.day-transport-link {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.day-transport-link:hover { background: var(--accent-soft); }
+
+/* Lodging slot inside day segment — slight tweaks to fit the card style */
+.day-segment .place-lodging.empty { border-top: 1px dashed var(--accent); }
+.day-segment .place-lodging.filled { border-top: 1px solid var(--border); }
+
+/* Activities inside day segment — always expanded, transparent bg to inherit card */
+.day-segment .activities { padding: 12px 14px 14px; background: transparent; }
+
+@media (max-width: 700px) {
+  .day-place-row { grid-template-columns: 56px 1fr; gap: 10px; }
+  .day-thumb { width: 56px; height: 56px; }
+  .day-place-name { font-size: 19px; }
 }
 
 /* Gap between places — connector with + button (and optional transport chip / inline form) */
@@ -1009,6 +1206,40 @@ textarea { resize: vertical; font-family: inherit; }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+.place-edit-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  line-height: 1.4;
+}
+
+.place-edit-hint.warn {
+  color: var(--fg);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.place-edit-error {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger);
+  background: var(--accent-soft);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 8px 12px;
+  animation: body-in 0.2s ease both;
+}
+
+.place-edit input[type="date"].invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .place-edit .actions {

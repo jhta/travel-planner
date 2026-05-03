@@ -21,6 +21,7 @@ let expandedPlaceId = null;
 let gapAction = null; // { index, mode: 'menu' | 'place' | 'transport' }
 let foodSectionOpen = true;
 let lodgingEditPlaceId = null;
+let viewMode = 'stops'; // 'stops' | 'days'
 let focusAfterRender = null;
 
 // ---------- Persistence ----------
@@ -572,14 +573,23 @@ function renderSidebar() {
   root.appendChild(addRow);
   setupAddPlaceInput(addRow, placeInput, dropdown);
 
-  // Places list
+  // View toggle
+  if (trip.places.length > 0) {
+    root.appendChild(renderViewToggle());
+  }
+
+  // Places list / Days view
   const list = document.createElement('div');
-  list.className = 'places-list';
+  list.className = viewMode === 'days' ? 'days-list' : 'places-list';
   if (trip.places.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
     empty.textContent = 'No places yet. Search above to add one.';
     list.appendChild(empty);
+  } else if (viewMode === 'days') {
+    trip.places.forEach((place, i) => {
+      list.appendChild(renderDaySegment(trip, place, i));
+    });
   } else {
     trip.places.forEach((place, i) => {
       list.appendChild(renderPlaceCard(place, i));
@@ -1240,6 +1250,161 @@ function renderLodgingModal() {
   return backdrop;
 }
 
+function renderViewToggle() {
+  const wrap = document.createElement('div');
+  wrap.className = 'view-toggle';
+  wrap.setAttribute('role', 'tablist');
+  [
+    { id: 'stops', label: 'Stops' },
+    { id: 'days', label: 'Days' },
+  ].forEach((opt) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'view-toggle-btn' + (viewMode === opt.id ? ' active' : '');
+    btn.textContent = opt.label;
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', String(viewMode === opt.id));
+    btn.addEventListener('click', () => {
+      if (viewMode === opt.id) return;
+      viewMode = opt.id;
+      render();
+    });
+    wrap.appendChild(btn);
+  });
+  return wrap;
+}
+
+function dayNumberOf(trip, isoDate) {
+  if (!trip.startDate || !isoDate) return null;
+  const start = new Date(trip.startDate);
+  const target = new Date(isoDate);
+  if (isNaN(start.getTime()) || isNaN(target.getTime())) return null;
+  const days = Math.round((target - start) / 86400000);
+  return days >= 0 ? days + 1 : null;
+}
+
+function computeDayRange(trip, place) {
+  const startDay = dayNumberOf(trip, place.arrival);
+  const endDay = dayNumberOf(trip, place.departure);
+  if (startDay && endDay && endDay > startDay) return `Day ${startDay}–${endDay}`;
+  if (startDay) return `Day ${startDay}`;
+  return null;
+}
+
+function formatDayDateRange(start, end) {
+  const fmt = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+  const a = fmt(start);
+  const b = fmt(end);
+  if (a && b && a !== b) return `${a} → ${b}`;
+  return a || b || '';
+}
+
+function renderDaySegment(trip, place, idx) {
+  const card = document.createElement('article');
+  card.className = 'day-segment';
+  if (selectedPlaceId === place.id) card.classList.add('selected');
+  card.dataset.placeId = place.id;
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('a, button, input, textarea')) return;
+    selectPlace(place.id);
+  });
+
+  // Header
+  const header = document.createElement('header');
+  header.className = 'day-segment-header';
+
+  const dayRange = computeDayRange(trip, place);
+  const dateLabel = formatDayDateRange(place.arrival, place.departure);
+
+  const meta = document.createElement('div');
+  meta.className = 'day-segment-meta';
+  if (dayRange) {
+    const pill = document.createElement('span');
+    pill.className = 'day-pill';
+    pill.textContent = dayRange;
+    meta.appendChild(pill);
+  }
+  if (dateLabel) {
+    const dateEl = document.createElement('span');
+    dateEl.className = 'day-date';
+    dateEl.textContent = dateLabel;
+    meta.appendChild(dateEl);
+  }
+  if (!dayRange && !dateLabel) {
+    const placeholder = document.createElement('span');
+    placeholder.className = 'day-date';
+    placeholder.textContent = 'Stop ' + (idx + 1);
+    meta.appendChild(placeholder);
+  }
+  header.appendChild(meta);
+
+  const placeRow = document.createElement('div');
+  placeRow.className = 'day-place-row';
+  const thumb = document.createElement('div');
+  thumb.className = 'thumb day-thumb';
+  applyPhoto(thumb, place);
+  const name = document.createElement('h3');
+  name.className = 'day-place-name';
+  name.textContent = place.name;
+  placeRow.append(thumb, name);
+  header.appendChild(placeRow);
+
+  card.appendChild(header);
+
+  // Inbound transport
+  if (idx > 0 && place.transportTo) {
+    card.appendChild(renderDayTransport(place.transportTo));
+  }
+
+  // Lodging
+  card.appendChild(renderLodgingSlot(place));
+
+  // Activities (always expanded in day view; renderActivities handles empty state)
+  card.appendChild(renderActivities(place));
+
+  return card;
+}
+
+function renderDayTransport(transport) {
+  const meta = transportModeMeta(transport.mode);
+  const wrap = document.createElement('div');
+  wrap.className = 'day-transport';
+
+  const icon = document.createElement('span');
+  icon.className = 'day-transport-icon';
+  icon.textContent = meta.icon;
+
+  const text = document.createElement('span');
+  text.className = 'day-transport-text';
+  const lead = document.createElement('span');
+  lead.className = 'day-transport-lead';
+  lead.textContent = 'Got here via';
+  const detail = document.createElement('strong');
+  detail.textContent = meta.label + (transport.duration ? ` · ${transport.duration}` : '');
+  text.append(lead, detail);
+
+  wrap.append(icon, text);
+
+  if (transport.link) {
+    const link = document.createElement('a');
+    link.href = transport.link;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.className = 'day-transport-link';
+    link.title = transport.link;
+    link.appendChild(svgIcon('M4 3h5v5M9 3L4 8M3 6v3h3', { size: 12 }));
+    link.addEventListener('click', (e) => e.stopPropagation());
+    wrap.appendChild(link);
+  }
+
+  return wrap;
+}
+
 function renderActivityPill(place) {
   const activities = Array.isArray(place.activities) ? place.activities : [];
   const total = activities.length;
@@ -1731,8 +1896,22 @@ function renderInlineAddPlace(index) {
 }
 
 function renderPlaceEdit(place) {
+  const trip = getActiveTrip();
+  const tripStart = trip && trip.startDate ? trip.startDate : '';
+  const tripEnd = trip && trip.endDate ? trip.endDate : '';
+
   const form = document.createElement('div');
   form.className = 'place-edit';
+
+  const hint = document.createElement('p');
+  hint.className = 'place-edit-hint';
+  if (tripStart && tripEnd) {
+    hint.textContent = `Trip runs ${formatShort(tripStart)} – ${formatShort(tripEnd)}. Arrival and departure must fall within this range.`;
+  } else {
+    hint.classList.add('warn');
+    hint.textContent = 'This trip has no start/end dates set. Add them first via Edit trip — otherwise place dates can drift out of range.';
+  }
+  form.appendChild(hint);
 
   const datesRow = document.createElement('div');
   datesRow.className = 'dates-row';
@@ -1741,14 +1920,23 @@ function renderPlaceEdit(place) {
   const arrInput = document.createElement('input');
   arrInput.type = 'date';
   arrInput.value = place.arrival || '';
+  if (tripStart) arrInput.min = tripStart;
+  if (tripEnd) arrInput.max = tripEnd;
   arrLbl.appendChild(arrInput);
   const depLbl = document.createElement('label');
   depLbl.textContent = 'Departure';
   const depInput = document.createElement('input');
   depInput.type = 'date';
   depInput.value = place.departure || '';
+  if (tripStart) depInput.min = tripStart;
+  if (tripEnd) depInput.max = tripEnd;
   depLbl.appendChild(depInput);
   datesRow.append(arrLbl, depLbl);
+
+  const errorEl = document.createElement('p');
+  errorEl.className = 'place-edit-error';
+  errorEl.hidden = true;
+  errorEl.setAttribute('role', 'alert');
 
   const notesLbl = document.createElement('label');
   notesLbl.textContent = 'Notes';
@@ -1776,12 +1964,34 @@ function renderPlaceEdit(place) {
   right.append(cancelBtn, saveBtn);
   actions.append(delBtn, right);
 
-  form.append(datesRow, notesLbl, actions);
+  form.append(datesRow, errorEl, notesLbl, actions);
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.hidden = false;
+    arrInput.classList.toggle('invalid', /arrival/i.test(msg) || /both/i.test(msg) || /trip range/i.test(msg));
+    depInput.classList.toggle('invalid', /departure/i.test(msg) || /both/i.test(msg) || /trip range/i.test(msg));
+  }
+  function clearError() {
+    errorEl.hidden = true;
+    errorEl.textContent = '';
+    arrInput.classList.remove('invalid');
+    depInput.classList.remove('invalid');
+  }
+  arrInput.addEventListener('input', clearError);
+  depInput.addEventListener('input', clearError);
 
   saveBtn.addEventListener('click', () => {
+    const arr = arrInput.value;
+    const dep = depInput.value;
+    const err = validatePlaceDates(arr, dep, tripStart, tripEnd);
+    if (err) {
+      showError(err);
+      return;
+    }
     updatePlace(place.id, {
-      arrival: arrInput.value,
-      departure: depInput.value,
+      arrival: arr,
+      departure: dep,
       notes: notesInput.value,
     });
     editingPlaceId = null;
@@ -1799,6 +2009,28 @@ function renderPlaceEdit(place) {
   });
 
   return form;
+}
+
+function validatePlaceDates(arrival, departure, tripStart, tripEnd) {
+  if ((arrival || departure) && (!tripStart || !tripEnd)) {
+    return 'Set the trip start and end dates first (Edit trip), then come back here.';
+  }
+  if (arrival && tripStart && arrival < tripStart) {
+    return `Arrival ${formatShort(arrival)} is before the trip starts (${formatShort(tripStart)}).`;
+  }
+  if (arrival && tripEnd && arrival > tripEnd) {
+    return `Arrival ${formatShort(arrival)} is after the trip ends (${formatShort(tripEnd)}).`;
+  }
+  if (departure && tripStart && departure < tripStart) {
+    return `Departure ${formatShort(departure)} is before the trip starts (${formatShort(tripStart)}).`;
+  }
+  if (departure && tripEnd && departure > tripEnd) {
+    return `Departure ${formatShort(departure)} is after the trip ends (${formatShort(tripEnd)}).`;
+  }
+  if (arrival && departure && departure < arrival) {
+    return 'Departure cannot be before arrival.';
+  }
+  return null;
 }
 
 function applyPhoto(thumb, place) {
