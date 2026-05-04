@@ -1126,12 +1126,85 @@ textarea { resize: vertical; font-family: inherit; }
   text-transform: uppercase;
 }
 
-.activity-note-flag {
-  display: inline-flex;
-  align-items: center;
-  color: var(--fg-muted);
-  cursor: help;
+/* ---------- Collapsible notes block (trip / place / activity) ---------- */
+
+.notes-block {
+  font-size: 13px;
+  color: var(--fg);
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
+
+.notes-block .notes-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.notes-block.clampable .notes-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.notes-block.clampable.expanded .notes-text {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+.notes-toggle {
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.notes-toggle:hover { text-decoration: underline; }
+
+/* Trip-level description — soft card under the trip header */
+.trip-display-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.notes-block.trip-notes {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--fg-muted);
+}
+
+/* Place-level description — full-width strip inside the card, between lodging and activities */
+.notes-block.place-notes {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.day-segment .notes-block.place-notes {
+  background: transparent;
+}
+
+/* Activity-level description — inline under the text, smaller and muted */
+.notes-block.activity-notes {
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.notes-block.activity-notes .notes-toggle { font-size: 11px; }
 
 .activity-del,
 .activity-link-edit,

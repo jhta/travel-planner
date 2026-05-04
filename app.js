@@ -23,6 +23,7 @@ let foodSectionOpen = true;
 let lodgingEditPlaceId = null;
 let activityEditId = null; // { placeId, activityId } | null
 let viewMode = 'stops'; // 'stops' | 'days'
+const expandedNotes = new Set(); // keys like "trip:t_xxx", "place:p_xxx", "activity:a_xxx"
 let focusAfterRender = null;
 
 // ---------- Persistence ----------
@@ -963,7 +964,20 @@ function renderTripDisplay(trip) {
   });
 
   wrap.append(text, editBtn);
+
+  const notesEl = renderNotes(trip.notes, `trip:${trip.id}`);
+  if (notesEl) {
+    notesEl.classList.add('trip-notes');
+    return wrapTripDisplayWithNotes(wrap, notesEl);
+  }
   return wrap;
+}
+
+function wrapTripDisplayWithNotes(headerWrap, notesEl) {
+  const outer = document.createElement('div');
+  outer.className = 'trip-display-wrap';
+  outer.append(headerWrap, notesEl);
+  return outer;
 }
 
 function renderTripEdit(trip) {
@@ -994,6 +1008,14 @@ function renderTripEdit(trip) {
   endLbl.appendChild(endInput);
   datesRow.append(startLbl, endLbl);
 
+  const notesLbl = document.createElement('label');
+  notesLbl.textContent = 'Description (optional)';
+  const notesInput = document.createElement('textarea');
+  notesInput.rows = 3;
+  notesInput.placeholder = 'A short description, theme, vibe, anything that frames the trip…';
+  notesInput.value = trip.notes || '';
+  notesLbl.appendChild(notesInput);
+
   const actions = document.createElement('div');
   actions.className = 'actions';
   const left = document.createElement('div');
@@ -1016,13 +1038,14 @@ function renderTripEdit(trip) {
   right.append(cancelBtn, saveBtn);
   actions.append(left, right);
 
-  form.append(nameLbl, datesRow, actions);
+  form.append(nameLbl, datesRow, notesLbl, actions);
 
   const save = () => {
     updateTrip({
       name: nameInput.value.trim() || 'Untitled',
       startDate: startInput.value,
       endDate: endInput.value,
+      notes: notesInput.value.trim(),
     });
     tripEditing = false;
     render();
@@ -1097,6 +1120,12 @@ function renderPlaceCard(place, idx) {
   card.appendChild(row);
 
   card.appendChild(renderLodgingSlot(place));
+
+  const notesEl = renderNotes(place.notes, `place:${place.id}`);
+  if (notesEl) {
+    notesEl.classList.add('place-notes');
+    card.appendChild(notesEl);
+  }
 
   if (editingPlaceId === place.id) {
     card.appendChild(renderPlaceEdit(place));
@@ -1580,6 +1609,13 @@ function renderDaySegment(trip, place, idx) {
   // Lodging
   card.appendChild(renderLodgingSlot(place));
 
+  // Place notes
+  const notesEl = renderNotes(place.notes, `place:${place.id}`);
+  if (notesEl) {
+    notesEl.classList.add('place-notes');
+    card.appendChild(notesEl);
+  }
+
   // Activities (always expanded in day view; renderActivities handles empty state)
   card.appendChild(renderActivities(place));
 
@@ -1796,7 +1832,6 @@ function renderActivityItem(place, activity) {
   li.className = 'activity-item';
   if (activity.done) li.classList.add('done');
   if (activity.link) li.classList.add('has-link');
-  if (activity.notes) li.title = activity.notes;
 
   const check = document.createElement('button');
   check.type = 'button';
@@ -1823,14 +1858,13 @@ function renderActivityItem(place, activity) {
     dayPill.textContent = dayNum ? `Day ${dayNum}` : formatShort(activity.day);
     tags.appendChild(dayPill);
   }
-  if (activity.notes) {
-    const noteIcon = document.createElement('span');
-    noteIcon.className = 'activity-note-flag';
-    noteIcon.setAttribute('aria-label', 'Has notes');
-    noteIcon.appendChild(svgIcon('M3 2h6v8H3zM5 4h2M5 6h2M5 8h2', { size: 11, strokeWidth: 1.4 }));
-    tags.appendChild(noteIcon);
-  }
   if (tags.children.length > 0) main.appendChild(tags);
+
+  const notesEl = renderNotes(activity.notes, `activity:${activity.id}`);
+  if (notesEl) {
+    notesEl.classList.add('activity-notes');
+    main.appendChild(notesEl);
+  }
 
   const actions = document.createElement('span');
   actions.className = 'activity-actions';
@@ -1873,6 +1907,46 @@ function renderActivityItem(place, activity) {
 
   li.append(check, main, actions);
   return li;
+}
+
+function isLongNote(text) {
+  if (!text) return false;
+  if (text.length > 180) return true;
+  if ((text.match(/\n/g) || []).length >= 2) return true;
+  return false;
+}
+
+function renderNotes(text, key) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return null;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'notes-block';
+  const long = isLongNote(trimmed);
+  const expanded = expandedNotes.has(key);
+  if (long) wrap.classList.add('clampable');
+  if (long && expanded) wrap.classList.add('expanded');
+
+  const p = document.createElement('p');
+  p.className = 'notes-text';
+  p.textContent = trimmed;
+  wrap.appendChild(p);
+
+  if (long) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'notes-toggle';
+    btn.textContent = expanded ? 'Show less' : 'Show more';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (expandedNotes.has(key)) expandedNotes.delete(key);
+      else expandedNotes.add(key);
+      render();
+    });
+    wrap.appendChild(btn);
+  }
+
+  return wrap;
 }
 
 function svgIcon(path, { size = 12, strokeWidth = 1.5, className = '' } = {}) {
