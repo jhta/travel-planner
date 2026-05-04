@@ -238,6 +238,24 @@ textarea { resize: vertical; font-family: inherit; }
   background: var(--bg-elev);
 }
 
+.trip-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.trip-share-btn {
+  color: var(--accent);
+  border-color: transparent;
+}
+
+.trip-share-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: transparent;
+}
+
 .trip-edit {
   display: flex;
   flex-direction: column;
@@ -2392,7 +2410,8 @@ body.onboarding-active .app-main { display: none; }
 /* Modal — shared shell between lodging and activity modals */
 
 .lodging-modal-backdrop,
-.activity-modal-backdrop {
+.activity-modal-backdrop,
+.app-modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(3, 17, 9, 0.55);
@@ -2411,7 +2430,8 @@ body.onboarding-active .app-main { display: none; }
 }
 
 .lodging-modal,
-.activity-modal {
+.activity-modal,
+.app-modal {
   position: relative;
   width: 100%;
   max-width: 520px;
@@ -2432,7 +2452,8 @@ body.onboarding-active .app-main { display: none; }
 }
 
 .lodging-modal-close,
-.activity-modal-close {
+.activity-modal-close,
+.app-modal-close {
   position: absolute;
   top: 12px;
   right: 12px;
@@ -2449,17 +2470,20 @@ body.onboarding-active .app-main { display: none; }
 }
 
 .lodging-modal-close:hover,
-.activity-modal-close:hover { color: var(--fg); background: var(--bg); }
+.activity-modal-close:hover,
+.app-modal-close:hover { color: var(--fg); background: var(--bg); }
 
 .lodging-modal-icon,
-.activity-modal-icon {
+.activity-modal-icon,
+.app-modal-icon {
   font-size: 36px;
   line-height: 1;
   text-align: center;
 }
 
 .lodging-modal-title,
-.activity-modal-title {
+.activity-modal-title,
+.app-modal-title {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
@@ -2469,14 +2493,16 @@ body.onboarding-active .app-main { display: none; }
 }
 
 .lodging-modal-field,
-.activity-modal-field {
+.activity-modal-field,
+.app-modal-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
 .lodging-modal-field > span,
-.activity-modal-field > span {
+.activity-modal-field > span,
+.app-modal-field > span {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -2487,7 +2513,8 @@ body.onboarding-active .app-main { display: none; }
 .lodging-modal-field input[type="text"],
 .activity-modal-field input[type="text"],
 .activity-modal-field input[type="date"],
-.activity-modal-field textarea {
+.activity-modal-field textarea,
+.app-modal-field input[type="text"] {
   font-family: inherit;
   font-size: 14px;
   color: var(--fg);
@@ -2503,7 +2530,8 @@ body.onboarding-active .app-main { display: none; }
 .lodging-modal-field input[type="text"]:focus,
 .activity-modal-field input[type="text"]:focus,
 .activity-modal-field input[type="date"]:focus,
-.activity-modal-field textarea:focus {
+.activity-modal-field textarea:focus,
+.app-modal-field input[type="text"]:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
@@ -2518,7 +2546,8 @@ body.onboarding-active .app-main { display: none; }
 }
 
 .lodging-modal-field small,
-.activity-modal-field small {
+.activity-modal-field small,
+.app-modal-field small {
   font-size: 12px;
   color: var(--fg-muted);
 }
@@ -2541,28 +2570,74 @@ body.onboarding-active .app-main { display: none; }
 }
 
 .lodging-modal-actions,
-.activity-modal-actions {
+.activity-modal-actions,
+.app-modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 4px;
 }
 
+/* Share + import modal extras (subtitle, hint, trip name display) */
+.app-modal-subtitle {
+  margin: -8px 0 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.share-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  line-height: 1.5;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.share-hint.warn {
+  color: var(--fg);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.import-trip-name {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+}
+
+.app-modal-field input[readonly] {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  cursor: text;
+}
+
 .lodging-modal-actions button,
-.activity-modal-actions button { padding: 10px 18px; border-radius: 10px; }
+.activity-modal-actions button,
+.app-modal-actions button { padding: 10px 18px; border-radius: 10px; }
 .lodging-modal-actions .primary:disabled,
-.activity-modal-actions .primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.activity-modal-actions .primary:disabled,
+.app-modal-actions .primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* Bottom-sheet variant on phones */
 @media (max-width: 600px) {
   .lodging-modal-backdrop,
-  .activity-modal-backdrop {
+  .activity-modal-backdrop,
+  .app-modal-backdrop {
     padding: 0;
     align-items: flex-end;
     overflow-y: auto;
   }
   .lodging-modal,
-  .activity-modal {
+  .activity-modal,
+  .app-modal {
     width: 100%;
     max-width: 100%;
     padding: 24px 18px max(18px, env(safe-area-inset-bottom, 0));
@@ -2576,7 +2651,8 @@ body.onboarding-active .app-main { display: none; }
     to { transform: translateY(0); opacity: 1; }
   }
   .lodging-modal::before,
-  .activity-modal::before {
+  .activity-modal::before,
+  .app-modal::before {
     content: '';
     display: block;
     width: 40px;
@@ -2586,29 +2662,35 @@ body.onboarding-active .app-main { display: none; }
     margin: -10px auto 4px;
   }
   .lodging-modal-icon,
-  .activity-modal-icon { font-size: 30px; }
+  .activity-modal-icon,
+  .app-modal-icon { font-size: 30px; }
   .lodging-modal-title,
-  .activity-modal-title { font-size: 18px; line-height: 1.25; }
+  .activity-modal-title,
+  .app-modal-title { font-size: 18px; line-height: 1.25; }
   /* iOS Safari zooms when input font-size < 16px — keep all inputs at 16px+ */
   .lodging-modal-field input[type="text"],
   .activity-modal-field input[type="text"],
   .activity-modal-field input[type="date"],
-  .activity-modal-field textarea { font-size: 16px; }
+  .activity-modal-field textarea,
+  .app-modal-field input[type="text"] { font-size: 16px; }
   .lodging-modal-field.primary input[type="text"],
   .activity-modal-field.primary input[type="text"] { font-size: 17px; padding: 13px 14px; }
   .lodging-modal-actions,
-  .activity-modal-actions {
+  .activity-modal-actions,
+  .app-modal-actions {
     flex-direction: column-reverse;
     gap: 10px;
   }
   .lodging-modal-actions button,
-  .activity-modal-actions button {
+  .activity-modal-actions button,
+  .app-modal-actions button {
     width: 100%;
     padding: 13px 18px;
     font-size: 15px;
   }
   .lodging-modal-close,
-  .activity-modal-close {
+  .activity-modal-close,
+  .app-modal-close {
     top: 16px;
     right: 14px;
     width: 36px;

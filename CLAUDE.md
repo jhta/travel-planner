@@ -35,7 +35,7 @@ The whole app is four files at the repo root: `index.html`, `styles.css`, `app.j
 
 - Single module-level `state = { trips, activeTripId }` plus UI scalars: `editingPlaceId`, `selectedPlaceId`, `expandedPlaceId`, `gapAction` (`{ index, mode: 'menu' | 'place' | 'transport' }`), `tripEditing`, `foodSectionOpen`, `focusAfterRender`, and Leaflet layer handles (`map`, `markersLayer`, `polylineLayer`, `arrowsLayer`, `placeMarkers`).
 - `loadState()` reads `localStorage[STORAGE_KEY]` first; only falls back to `fetch('trips.json')` if storage is empty/corrupt. Every mutation calls `saveState()` which writes back to `localStorage`. `trips.json` on disk is just the seed/snapshot — the Export button downloads current state as `trips.json`, the Reload button clears localStorage and re-fetches the file.
-- Trip shape: `{ id, name, startDate, endDate, flights, documents[], packing[], foods[], places: [...] }`. Place shape: `{ id, name, lat, lng, arrival, departure, notes, photoUrl, activities?: [{ id, text, done, link? }], transportTo?: { mode, duration, notes, link } }`. Food shape: `{ id, name, imageUrl, link? }`. `photoUrl` and `imageUrl` share the same tri-state: `null` = not fetched, `''` = fetched but no photo found (don't retry), string URL = use it.
+- Trip shape: `{ id, name, startDate, endDate, notes?, flights, documents[], packing[], foods[], places: [...] }`. Place shape: `{ id, name, lat, lng, arrival, departure, notes, photoUrl, lodging?: { url, name? }, activities?: [{ id, text, done, link?, day?, notes? }], transportTo?: { mode, duration, notes, link } }`. Food shape: `{ id, name, imageUrl, link? }`. `photoUrl` and `imageUrl` share the same tri-state: `null` = not fetched, `''` = fetched but no photo found (don't retry), string URL = use it.
 - `transportTo` lives on the **destination** place (i.e. `places[i+1].transportTo` describes how you got from `places[i]` to `places[i+1]`).
 
 ### Adding new persistent fields
@@ -71,6 +71,10 @@ Each "expandable" UI follows the same 3-piece recipe:
 
 - Geocoding: `https://nominatim.openstreetmap.org/search` (debounced 350 ms in `setupAddPlaceInput` and the onboarding places step). Uses an `AbortController` (`geocodeAbort`) shared across both consumers. `setupAddPlaceInput` accepts an optional `onPick` callback so the inline gap variant can `insertPlaceAt(index, ...)` instead of `addPlace()`.
 - Photos: `fetchPhoto(place)` tries Wikidata SPARQL (most-famous landmark within 25km of `lat`/`lng`) first, then falls back to Wikipedia REST `page/summary/{title}`. Result is cached on the place; a one-shot `migratePhotosOnce()` (keyed by `travel-planner-photo-migrated-v2` in localStorage) clears stale Wikipedia URLs from older clients exactly once. CORS-friendly, no API key — keep it that way.
+
+### Sharing trips via URL
+
+`encodeTripToHash(trip)` strips cached `photoUrl` / `imageUrl` (recipient re-fetches), wraps in `{ v: 1, trip }`, and runs through `LZString.compressToEncodedURIComponent` (lz-string CDN in `index.html`). The result lives in `location.hash` as `#trip=<encoded>` — never in a query param, so it's never sent to the worker. On boot, `decodeTripFromHash` parses the hash; if a trip is found, the import modal pops with stop/activity counts. Accept → new IDs assigned (always, to prevent collisions) → `ensureTripFields` runs → pushed into `state.trips`. Hash is cleared via `history.replaceState` after import or dismiss.
 
 ### Conventions
 

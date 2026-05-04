@@ -24,6 +24,8 @@ let lodgingEditPlaceId = null;
 let activityEditId = null; // { placeId, activityId } | null
 let viewMode = 'stops'; // 'stops' | 'days'
 const expandedNotes = new Set(); // keys like "trip:t_xxx", "place:p_xxx", "activity:a_xxx"
+let shareModalTripId = null;
+let importPrompt = null; // decoded incoming trip from URL hash
 let focusAfterRender = null;
 
 // ---------- Persistence ----------
@@ -143,6 +145,90 @@ function importFromFile() {
     }
   });
   input.click();
+}
+
+// ---------- Share via URL ----------
+
+function encodeTripToHash(trip) {
+  if (typeof LZString === 'undefined') {
+    console.warn('LZString not loaded');
+    return '';
+  }
+  // Strip cached photo/image URLs so the encoded blob is small;
+  // recipient will re-fetch from Wikidata/Wikipedia on render.
+  const stripped = JSON.parse(JSON.stringify(trip));
+  if (Array.isArray(stripped.places)) {
+    stripped.places.forEach((p) => {
+      delete p.photoUrl;
+    });
+  }
+  if (Array.isArray(stripped.foods)) {
+    stripped.foods.forEach((f) => {
+      delete f.imageUrl;
+    });
+  }
+  const payload = { v: 1, trip: stripped };
+  return LZString.compressToEncodedURIComponent(JSON.stringify(payload));
+}
+
+function decodeTripFromHash(hash) {
+  if (typeof LZString === 'undefined') return null;
+  if (!hash || !hash.startsWith('#trip=')) return null;
+  const encoded = hash.slice('#trip='.length);
+  try {
+    const json = LZString.decompressFromEncodedURIComponent(encoded);
+    if (!json) return null;
+    const payload = JSON.parse(json);
+    const trip = payload && payload.trip ? payload.trip : payload;
+    if (!trip || !trip.id || !Array.isArray(trip.places)) return null;
+    return trip;
+  } catch (e) {
+    console.warn('Could not decode shared trip', e);
+    return null;
+  }
+}
+
+function buildShareUrl(trip) {
+  const base = window.location.origin + window.location.pathname;
+  return `${base}#trip=${encodeTripToHash(trip)}`;
+}
+
+function clearShareHash() {
+  if (window.location.hash.startsWith('#trip=')) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+}
+
+function openShareModal(tripId) {
+  shareModalTripId = tripId;
+  focusAfterRender = '[data-share-url]';
+  render();
+}
+
+function closeShareModal() {
+  shareModalTripId = null;
+  render();
+}
+
+function importSharedTrip(rawTrip) {
+  // Always assign new IDs to avoid collisions with existing trips/places.
+  const newTrip = JSON.parse(JSON.stringify(rawTrip));
+  newTrip.id = newId('t');
+  newTrip.places = (newTrip.places || []).map((p) => ({ ...p, id: newId('p') }));
+  ensureTripFields(newTrip);
+  state.trips.push(newTrip);
+  state.activeTripId = newTrip.id;
+  importPrompt = null;
+  clearShareHash();
+  saveState();
+  if (!map) initMap();
+  render();
+}
+
+function dismissImportPrompt() {
+  importPrompt = null;
+  clearShareHash();
+  render();
 }
 
 async function reloadFromFile() {
@@ -594,6 +680,8 @@ function renderSidebar() {
     empty.className = 'empty-state';
     empty.textContent = 'No trip selected. Create one to start planning.';
     root.appendChild(empty);
+    const importModalEarly = renderImportModal();
+    if (importModalEarly) root.appendChild(importModalEarly);
     return;
   }
 
@@ -655,6 +743,10 @@ function renderSidebar() {
   if (lodgingModal) root.appendChild(lodgingModal);
   const activityModal = renderActivityModal();
   if (activityModal) root.appendChild(activityModal);
+  const shareModal = renderShareModal();
+  if (shareModal) root.appendChild(shareModal);
+  const importModal = renderImportModal();
+  if (importModal) root.appendChild(importModal);
 }
 
 function renderFlights(trip) {
@@ -954,6 +1046,16 @@ function renderTripDisplay(trip) {
   dates.textContent = formatTripDates(trip.startDate, trip.endDate);
   text.append(title, dates);
 
+  const actionsWrap = document.createElement('div');
+  actionsWrap.className = 'trip-actions';
+
+  const shareBtn = document.createElement('button');
+  shareBtn.type = 'button';
+  shareBtn.className = 'trip-edit-btn trip-share-btn';
+  shareBtn.title = 'Get a shareable link';
+  shareBtn.textContent = 'Share';
+  shareBtn.addEventListener('click', () => openShareModal(trip.id));
+
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
   editBtn.className = 'trip-edit-btn';
@@ -963,7 +1065,8 @@ function renderTripDisplay(trip) {
     render();
   });
 
-  wrap.append(text, editBtn);
+  actionsWrap.append(shareBtn, editBtn);
+  wrap.append(text, actionsWrap);
 
   const notesEl = renderNotes(trip.notes, `trip:${trip.id}`);
   if (notesEl) {
@@ -1493,6 +1596,176 @@ function validateActivityDay(day, tripStart, tripEnd) {
   if (day < tripStart) return `Day ${formatShort(day)} is before the trip starts (${formatShort(tripStart)}).`;
   if (day > tripEnd) return `Day ${formatShort(day)} is after the trip ends (${formatShort(tripEnd)}).`;
   return null;
+}
+
+function renderShareModal() {
+  if (!shareModalTripId) return null;
+  const trip = state.trips.find((t) => t.id === shareModalTripId);
+  if (!trip) return null;
+
+  const url = buildShareUrl(trip);
+  const sizeBytes = new Blob([url]).size;
+  const sizeLabel = sizeBytes < 1024
+    ? `${sizeBytes} B`
+    : `${(sizeBytes / 1024).toFixed(1)} KB`;
+  const tooLong = sizeBytes > 1800;
+
+  const stops = (trip.places || []).length;
+  const activities = (trip.places || []).reduce(
+    (sum, p) => sum + ((p.activities && p.activities.length) || 0),
+    0
+  );
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'app-modal-backdrop';
+  backdrop.addEventListener('click', () => closeShareModal());
+
+  const card = document.createElement('div');
+  card.className = 'app-modal';
+  card.addEventListener('click', (e) => e.stopPropagation());
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'app-modal-close';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.textContent = '×';
+  closeBtn.addEventListener('click', () => closeShareModal());
+
+  const icon = document.createElement('div');
+  icon.className = 'app-modal-icon';
+  icon.textContent = '🔗';
+
+  const title = document.createElement('h2');
+  title.className = 'app-modal-title';
+  title.textContent = `Share "${trip.name}"`;
+
+  const subtitle = document.createElement('p');
+  subtitle.className = 'app-modal-subtitle';
+  subtitle.textContent = `${stops} ${stops === 1 ? 'stop' : 'stops'} · ${activities} ${activities === 1 ? 'activity' : 'activities'} · link is ${sizeLabel}`;
+
+  const urlField = document.createElement('label');
+  urlField.className = 'app-modal-field';
+  const urlLabel = document.createElement('span');
+  urlLabel.textContent = 'Shareable link';
+  const urlInput = document.createElement('input');
+  urlInput.type = 'text';
+  urlInput.readOnly = true;
+  urlInput.value = url;
+  urlInput.dataset.shareUrl = '1';
+  urlInput.addEventListener('focus', () => urlInput.select());
+  urlField.append(urlLabel, urlInput);
+
+  const hint = document.createElement('p');
+  hint.className = 'share-hint';
+  if (tooLong) {
+    hint.classList.add('warn');
+    hint.textContent = 'Heads-up: this link is long enough that some email clients may break it on a line. Messengers (WhatsApp, iMessage, Slack, etc.) handle it fine.';
+  } else {
+    hint.textContent = 'No server, no account needed — the whole trip is encoded in the link itself. The recipient just opens it and gets a "Import this trip?" prompt.';
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'app-modal-actions';
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'ghost';
+  close.textContent = 'Close';
+  close.addEventListener('click', () => closeShareModal());
+
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'primary';
+  copy.textContent = 'Copy link';
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      copy.textContent = 'Copied ✓';
+      setTimeout(() => { copy.textContent = 'Copy link'; }, 1600);
+    } catch (e) {
+      // Fallback for browsers / contexts without clipboard API
+      urlInput.select();
+      document.execCommand('copy');
+      copy.textContent = 'Copied ✓';
+      setTimeout(() => { copy.textContent = 'Copy link'; }, 1600);
+    }
+  });
+
+  actions.append(close, copy);
+
+  card.append(closeBtn, icon, title, subtitle, urlField, hint, actions);
+  backdrop.appendChild(card);
+  return backdrop;
+}
+
+function renderImportModal() {
+  if (!importPrompt) return null;
+  const incoming = importPrompt;
+  const stops = (incoming.places || []).length;
+  const activities = (incoming.places || []).reduce(
+    (sum, p) => sum + ((p.activities && p.activities.length) || 0),
+    0
+  );
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'app-modal-backdrop';
+  backdrop.addEventListener('click', () => dismissImportPrompt());
+
+  const card = document.createElement('div');
+  card.className = 'app-modal';
+  card.addEventListener('click', (e) => e.stopPropagation());
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'app-modal-close';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.textContent = '×';
+  closeBtn.addEventListener('click', () => dismissImportPrompt());
+
+  const icon = document.createElement('div');
+  icon.className = 'app-modal-icon';
+  icon.textContent = '📬';
+
+  const title = document.createElement('h2');
+  title.className = 'app-modal-title';
+  title.textContent = 'Import this trip?';
+
+  const tripName = document.createElement('p');
+  tripName.className = 'import-trip-name';
+  tripName.textContent = incoming.name || 'Shared trip';
+
+  const subtitle = document.createElement('p');
+  subtitle.className = 'app-modal-subtitle';
+  const dateRange = formatTripDates(incoming.startDate, incoming.endDate);
+  const parts = [`${stops} ${stops === 1 ? 'stop' : 'stops'}`];
+  if (activities > 0) parts.push(`${activities} ${activities === 1 ? 'activity' : 'activities'}`);
+  if (dateRange && dateRange !== 'Dates not set') parts.unshift(dateRange);
+  subtitle.textContent = parts.join(' · ');
+
+  const hint = document.createElement('p');
+  hint.className = 'share-hint';
+  hint.textContent = 'A copy will be added to your trips. The original sender won\'t see your changes — this is a snapshot.';
+
+  const actions = document.createElement('div');
+  actions.className = 'app-modal-actions';
+
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'ghost';
+  cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', () => dismissImportPrompt());
+
+  const importBtn = document.createElement('button');
+  importBtn.type = 'button';
+  importBtn.className = 'primary';
+  importBtn.textContent = 'Import';
+  importBtn.addEventListener('click', () => importSharedTrip(incoming));
+
+  actions.append(cancel, importBtn);
+
+  card.append(closeBtn, icon, title, tripName, subtitle, hint, actions);
+  backdrop.appendChild(card);
+  return backdrop;
 }
 
 function renderViewToggle() {
@@ -3265,6 +3538,15 @@ async function init() {
   await loadState();
   migratePhotosOnce();
   bindGlobalEvents();
+
+  const incoming = decodeTripFromHash(window.location.hash);
+  if (incoming) {
+    importPrompt = incoming;
+    if (state.trips.length > 0) initMap();
+    render();
+    return;
+  }
+
   if (state.trips.length === 0) {
     startOnboarding({ initial: true });
   } else {
@@ -3292,6 +3574,8 @@ function bindGlobalEvents() {
   });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    if (importPrompt) { dismissImportPrompt(); return; }
+    if (shareModalTripId) { closeShareModal(); return; }
     if (activityEditId) { closeActivityModal(); return; }
     if (lodgingEditPlaceId) closeLodgingModal();
   });
