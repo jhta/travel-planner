@@ -29,7 +29,7 @@ The token in use has `workers (write)` scope only — do not switch to `wrangler
 
 ## Architecture
 
-The app's source lives at the repo root: `index.html`, `styles.css`, `app.js`, `trips.json`, plus PWA assets (`manifest.webmanifest`, `service-worker.js`, `icon.svg`). Leaflet 1.9.4 and leaflet-polylinedecorator 1.6.0 are loaded from CDN in `index.html` — there is no module system, everything in `app.js` is one IIFE-ish global script.
+The app's source lives at the repo root: `index.html`, `styles.css`, `app.js`, `trips.json`, plus PWA assets (`manifest.webmanifest`, `service-worker.js`, `icon.svg`) and the LLM skill page (`skill.html`). Leaflet 1.9.4 and leaflet-polylinedecorator 1.6.0 are loaded from CDN in `index.html` — there is no module system, everything in `app.js` is one IIFE-ish global script.
 
 ### State and persistence (app.js)
 
@@ -75,6 +75,15 @@ Each "expandable" UI follows the same 3-piece recipe:
 ### Sharing trips via URL
 
 `encodeTripToHash(trip)` strips cached `photoUrl` / `imageUrl` (recipient re-fetches), wraps in `{ v: 1, trip }`, and runs through `LZString.compressToEncodedURIComponent` (lz-string CDN in `index.html`). The result lives in `location.hash` as `#trip=<encoded>` — never in a query param, so it's never sent to the worker. On boot, `decodeTripFromHash` parses the hash; if a trip is found, the import modal pops with stop/activity counts. Accept → new IDs assigned (always, to prevent collisions) → `ensureTripFields` runs → pushed into `state.trips`. Hash is cleared via `history.replaceState` after import or dismiss.
+
+### LLM skill page (`skill.html`)
+
+`skill.html` is a standalone page meant for LLMs (Claude, etc.) to fetch and follow as a skill. Users paste its URL into a chat, the model interviews them, builds the trip JSON, and hands back a one-click share URL. Two client-side hash handlers in the page:
+
+- `#prefill=<URL-encoded-JSON>` — page reads the JSON, runs `LZString.compressToEncodedURIComponent`, then `location.replace('/#trip=…')`. Lets the LLM produce a "ready URL" without doing compression itself.
+- `#decode=<compressed-hash>` — page decompresses and renders the JSON in a `<pre>` with a Copy button, so a user can paste it back into chat to continue editing.
+
+**When the trip schema changes (place fields, activity fields, checklist shape), update `skill.html` AND `.claude/skills/plan-trip/SKILL.md` together** — the same schema is duplicated in both. The web page (`skill.html`) is for any LLM fetching the URL; the local skill is for Claude Code working in this repo. An LLM with a stale schema will produce trips with broken fields.
 
 ### Calendar export (.ics)
 
