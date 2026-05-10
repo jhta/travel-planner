@@ -29,13 +29,13 @@ The token in use has `workers (write)` scope only — do not switch to `wrangler
 
 ## Architecture
 
-The whole app is four files at the repo root: `index.html`, `styles.css`, `app.js`, `trips.json`. Leaflet 1.9.4 and leaflet-polylinedecorator 1.6.0 are loaded from CDN in `index.html` — there is no module system, everything in `app.js` is one IIFE-ish global script.
+The app's source lives at the repo root: `index.html`, `styles.css`, `app.js`, `trips.json`, plus PWA assets (`manifest.webmanifest`, `service-worker.js`, `icon.svg`). Leaflet 1.9.4 and leaflet-polylinedecorator 1.6.0 are loaded from CDN in `index.html` — there is no module system, everything in `app.js` is one IIFE-ish global script.
 
 ### State and persistence (app.js)
 
 - Single module-level `state = { trips, activeTripId }` plus UI scalars: `editingPlaceId`, `selectedPlaceId`, `expandedPlaceId`, `gapAction` (`{ index, mode: 'menu' | 'place' | 'transport' }`), `tripEditing`, `foodSectionOpen`, `focusAfterRender`, and Leaflet layer handles (`map`, `markersLayer`, `polylineLayer`, `arrowsLayer`, `placeMarkers`).
 - `loadState()` reads `localStorage[STORAGE_KEY]` first; only falls back to `fetch('trips.json')` if storage is empty/corrupt. Every mutation calls `saveState()` which writes back to `localStorage`. `trips.json` on disk is just the seed/snapshot — the Export button downloads current state as `trips.json`, the Reload button clears localStorage and re-fetches the file.
-- Trip shape: `{ id, name, startDate, endDate, notes?, flights, documents[], packing[], foods[], places: [...] }`. Place shape: `{ id, name, lat, lng, arrival, departure, notes, photoUrl, lodging?: { url, name? }, activities?: [{ id, text, done, link?, day?, notes? }], transportTo?: { mode, duration, notes, link } }`. Food shape: `{ id, name, imageUrl, link? }`. `photoUrl` and `imageUrl` share the same tri-state: `null` = not fetched, `''` = fetched but no photo found (don't retry), string URL = use it.
+- Trip shape: `{ id, name, startDate, endDate, notes?, flights, documents[], packing[], foods[], places: [...] }`. Checklist item shape (used by `documents` and `packing`): `{ id, name, checked }` — note `name`/`checked`, NOT `text`/`done`. Place shape: `{ id, name, lat, lng, arrival, departure, notes, photoUrl, lodging?: { url, name? }, activities?: [{ id, text, done, link?, day?, notes? }], transportTo?: { mode, duration, notes, link } }` — activities use `text`/`done`. Food shape: `{ id, name, imageUrl, link? }`. `photoUrl` and `imageUrl` share the same tri-state: `null` = not fetched, `''` = fetched but no photo found (don't retry), string URL = use it.
 - `transportTo` lives on the **destination** place (i.e. `places[i+1].transportTo` describes how you got from `places[i]` to `places[i+1]`).
 
 ### Adding new persistent fields
@@ -75,6 +75,14 @@ Each "expandable" UI follows the same 3-piece recipe:
 ### Sharing trips via URL
 
 `encodeTripToHash(trip)` strips cached `photoUrl` / `imageUrl` (recipient re-fetches), wraps in `{ v: 1, trip }`, and runs through `LZString.compressToEncodedURIComponent` (lz-string CDN in `index.html`). The result lives in `location.hash` as `#trip=<encoded>` — never in a query param, so it's never sent to the worker. On boot, `decodeTripFromHash` parses the hash; if a trip is found, the import modal pops with stop/activity counts. Accept → new IDs assigned (always, to prevent collisions) → `ensureTripFields` runs → pushed into `state.trips`. Hash is cleared via `history.replaceState` after import or dismiss.
+
+### Calendar export (.ics)
+
+`exportTripICS(trip)` (triggered by the "Calendar" button in the trip header) writes an RFC 5545 calendar with one VEVENT per lodging stay (multi-day all-day, `DTEND = departure + 1 day` per the exclusive-end convention) and one VEVENT per activity (all-day on `activity.day`, falling back to `place.arrival` then `trip.startDate`). UIDs are deterministic (`stay-<placeId>` / `activity-<activityId>@travel-planner.jsonlabs.workers.dev`) so re-imports update existing events instead of duplicating. Lines are folded to 75 octets (UTF-8-aware) and text fields are escaped per spec.
+
+### PWA / offline
+
+`manifest.webmanifest` + `service-worker.js` at the repo root make the app installable. The service worker pre-caches the app shell (HTML, JS, CSS, manifest, icon, plus the three CDN scripts) on install, then runs cache-first with a network refresh-and-store on same-origin GETs. Bypassed (no caching, network-only): `tile.openstreetmap.org`, `nominatim.openstreetmap.org`, Wikipedia/Wikidata/Wikimedia — they have their own caching and would bloat the cache. Bump `CACHE_NAME` (`tp-shell-v1`) when the shell changes; the activate handler deletes old caches. Registration happens after `load` from `app.js`.
 
 ### Conventions
 

@@ -1,0 +1,19 @@
+{
+  "name": "Travel Planner",
+  "short_name": "Travel",
+  "description": "Plan trips with places, lodging, activities, and a map.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#faf8f3",
+  "theme_color": "#fb8f67",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

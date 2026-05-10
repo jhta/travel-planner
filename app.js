@@ -83,6 +83,148 @@ function exportState() {
   URL.revokeObjectURL(url);
 }
 
+function exportTripICS(trip) {
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//travel-planner//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ];
+  if (trip.name) lines.push(`X-WR-CALNAME:${icsEscape(trip.name)}`);
+  const stamp = icsDateTimeUTC(new Date());
+
+  for (const place of trip.places) {
+    if (place.arrival) {
+      const startIso = place.arrival;
+      const endIso = icsAddDays(place.departure || place.arrival, 1);
+      const lodgingName = place.lodging && place.lodging.name && place.lodging.name.trim();
+      const summary = lodgingName ? `Stay: ${lodgingName}` : `Stay in ${place.name}`;
+      lines.push('BEGIN:VEVENT');
+      lines.push(`UID:stay-${place.id}@travel-planner.jsonlabs.workers.dev`);
+      lines.push(`DTSTAMP:${stamp}`);
+      lines.push(`DTSTART;VALUE=DATE:${icsDate(startIso)}`);
+      lines.push(`DTEND;VALUE=DATE:${icsDate(endIso)}`);
+      lines.push(`SUMMARY:${icsEscape(summary)}`);
+      lines.push(`LOCATION:${icsEscape(place.name)}`);
+      if (typeof place.lat === 'number' && typeof place.lng === 'number') {
+        lines.push(`GEO:${place.lat};${place.lng}`);
+      }
+      if (place.lodging && place.lodging.url) lines.push(`URL:${place.lodging.url}`);
+      lines.push('END:VEVENT');
+    }
+
+    for (const a of place.activities || []) {
+      const dayIso = a.day || place.arrival || trip.startDate;
+      if (!dayIso) continue;
+      lines.push('BEGIN:VEVENT');
+      lines.push(`UID:activity-${a.id}@travel-planner.jsonlabs.workers.dev`);
+      lines.push(`DTSTAMP:${stamp}`);
+      lines.push(`DTSTART;VALUE=DATE:${icsDate(dayIso)}`);
+      lines.push(`DTEND;VALUE=DATE:${icsDate(icsAddDays(dayIso, 1))}`);
+      lines.push(`SUMMARY:${icsEscape(a.text || 'Activity')}`);
+      lines.push(`LOCATION:${icsEscape(place.name)}`);
+      if (typeof place.lat === 'number' && typeof place.lng === 'number') {
+        lines.push(`GEO:${place.lat};${place.lng}`);
+      }
+      if (a.link) lines.push(`URL:${a.link}`);
+      if (a.notes) lines.push(`DESCRIPTION:${icsEscape(a.notes)}`);
+      lines.push('END:VEVENT');
+    }
+  }
+
+  lines.push('END:VCALENDAR');
+  const ics = foldICSLines(lines).join('\r\n') + '\r\n';
+
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${slugifyForFile(trip.name) || 'trip'}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function icsEscape(s) {
+  return String(s)
+    .replace(/\\/g, '\\\\')
+    .replace(/\r\n|\n|\r/g, '\\n')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;');
+}
+
+function icsDate(iso) {
+  const d = iso instanceof Date ? iso : new Date(`${iso}T00:00:00`);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}${m}${day}`;
+}
+
+function icsDateTimeUTC(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return (
+    d.getUTCFullYear().toString() +
+    pad(d.getUTCMonth() + 1) +
+    pad(d.getUTCDate()) +
+    'T' +
+    pad(d.getUTCHours()) +
+    pad(d.getUTCMinutes()) +
+    pad(d.getUTCSeconds()) +
+    'Z'
+  );
+}
+
+function icsAddDays(iso, n) {
+  const d = new Date(`${iso}T00:00:00`);
+  if (isNaN(d.getTime())) return iso;
+  d.setDate(d.getDate() + n);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function foldICSLines(lines) {
+  const enc = new TextEncoder();
+  const out = [];
+  for (const line of lines) {
+    if (enc.encode(line).length <= 75) {
+      out.push(line);
+      continue;
+    }
+    let chunk = '';
+    let bytes = 0;
+    let first = true;
+    for (const ch of line) {
+      const cb = enc.encode(ch).length;
+      const limit = first ? 75 : 74;
+      if (bytes + cb > limit) {
+        out.push(first ? chunk : ' ' + chunk);
+        first = false;
+        chunk = ch;
+        bytes = cb;
+      } else {
+        chunk += ch;
+        bytes += cb;
+      }
+    }
+    if (chunk) out.push(first ? chunk : ' ' + chunk);
+  }
+  return out;
+}
+
+function slugifyForFile(s) {
+  return String(s || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 function importFromFile() {
   const input = document.createElement('input');
   input.type = 'file';
@@ -1056,6 +1198,13 @@ function renderTripDisplay(trip) {
   shareBtn.textContent = 'Share';
   shareBtn.addEventListener('click', () => openShareModal(trip.id));
 
+  const calBtn = document.createElement('button');
+  calBtn.type = 'button';
+  calBtn.className = 'trip-edit-btn trip-cal-btn';
+  calBtn.title = 'Download as calendar (.ics) — open in Google Calendar, Apple Calendar, etc.';
+  calBtn.textContent = 'Calendar';
+  calBtn.addEventListener('click', () => exportTripICS(trip));
+
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
   editBtn.className = 'trip-edit-btn';
@@ -1065,7 +1214,7 @@ function renderTripDisplay(trip) {
     render();
   });
 
-  actionsWrap.append(shareBtn, editBtn);
+  actionsWrap.append(shareBtn, calBtn, editBtn);
   wrap.append(text, actionsWrap);
 
   const notesEl = renderNotes(trip.notes, `trip:${trip.id}`);
@@ -3582,3 +3731,11 @@ function bindGlobalEvents() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch((err) => {
+      console.warn('[sw] register failed', err);
+    });
+  });
+}
