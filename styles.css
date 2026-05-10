@@ -1469,9 +1469,22 @@ textarea { resize: vertical; font-family: inherit; }
   .place-row .place-name { font-size: 19px; }
 }
 
+#map-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
 #map {
   width: 100%;
   height: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.map-handle {
+  display: none;
 }
 
 .empty-state {
@@ -1525,14 +1538,70 @@ textarea { resize: vertical; font-family: inherit; }
 
 @media (max-width: 700px) {
   .app-main {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr 40vh;
+    display: block;
+    overflow: visible;
   }
   .sidebar {
     border-right: none;
-    border-bottom: 1px solid var(--border);
+    border-bottom: none;
     padding: 20px;
+    padding-bottom: calc(30vh + 24px);
+    overflow: visible;
   }
+
+  /* Bottom-sheet map: peeks at 30vh, expands to 100vh on tap */
+  #map-shell {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 30vh;
+    z-index: 5;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.18),
+                0 -16px 40px rgba(0, 0, 0, 0.32);
+    overflow: hidden;
+    transition: height 0.32s cubic-bezier(0.2, 0.8, 0.2, 1),
+                border-radius 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  body.map-expanded #map-shell {
+    height: 100vh;
+    border-radius: 0;
+  }
+  body.map-dragging #map-shell {
+    transition: none;
+  }
+
+  .map-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    width: 100%;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .map-handle-grip {
+    width: 48px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--fg-muted);
+    opacity: 0.5;
+    transition: opacity 0.15s, transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .map-handle:hover .map-handle-grip,
+  .map-handle:active .map-handle-grip { opacity: 0.85; }
+  body.map-expanded .map-handle-grip { transform: scaleX(0.7); }
+
   .trip-title { font-size: 26px; }
 
   /* Header — wrap controls so nothing overflows; drop title on cramped widths */

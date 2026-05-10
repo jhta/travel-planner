@@ -3710,6 +3710,69 @@ function enterApp() {
   if (map) setTimeout(() => map.invalidateSize(), 60);
 }
 
+function setupMapSheetDrag(handle, shell) {
+  const TAP_THRESHOLD_PX = 6;
+  const mobileMQ = window.matchMedia('(max-width: 700px)');
+  let drag = null;
+
+  function isMobile() { return mobileMQ.matches; }
+
+  function setExpanded(expanded) {
+    document.body.classList.toggle('map-expanded', expanded);
+    handle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  }
+
+  handle.addEventListener('pointerdown', (e) => {
+    if (!isMobile()) return;
+    if (e.button != null && e.button !== 0) return;
+    drag = {
+      pointerId: e.pointerId,
+      startY: e.clientY,
+      startHeight: shell.getBoundingClientRect().height,
+      moved: false,
+    };
+    try { handle.setPointerCapture(e.pointerId); } catch {}
+    document.body.classList.add('map-dragging');
+  });
+
+  handle.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const dy = drag.startY - e.clientY;
+    if (Math.abs(dy) > TAP_THRESHOLD_PX) drag.moved = true;
+    const vh = window.innerHeight;
+    const minH = vh * 0.3;
+    const maxH = vh;
+    const newH = Math.min(maxH, Math.max(minH, drag.startHeight + dy));
+    shell.style.height = newH + 'px';
+    if (map) map.invalidateSize();
+  });
+
+  function endDrag(e) {
+    if (!drag || (e && e.pointerId !== drag.pointerId)) return;
+    const finalH = shell.getBoundingClientRect().height;
+    const moved = drag.moved;
+    try { handle.releasePointerCapture(drag.pointerId); } catch {}
+    drag = null;
+    document.body.classList.remove('map-dragging');
+
+    if (!moved) {
+      const wasExpanded = document.body.classList.contains('map-expanded');
+      shell.style.height = '';
+      setExpanded(!wasExpanded);
+      return;
+    }
+
+    const vh = window.innerHeight;
+    const peek = vh * 0.3;
+    const expandTo = finalH > (peek + vh) / 2;
+    shell.style.height = '';
+    setExpanded(expandTo);
+  }
+
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+}
+
 function bindGlobalEvents() {
   document.getElementById('trip-selector').addEventListener('change', (e) => {
     if (e.target.value) setActiveTrip(e.target.value);
@@ -3721,12 +3784,26 @@ function bindGlobalEvents() {
   document.getElementById('new-trip-btn').addEventListener('click', () => {
     startOnboarding({ initial: false });
   });
+
+  const mapHandle = document.getElementById('map-handle');
+  const mapShell = document.getElementById('map-shell');
+  if (mapHandle && mapShell) {
+    setupMapSheetDrag(mapHandle, mapShell);
+    mapShell.addEventListener('transitionend', (e) => {
+      if (e.propertyName === 'height' && map) map.invalidateSize();
+    });
+  }
+
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (importPrompt) { dismissImportPrompt(); return; }
     if (shareModalTripId) { closeShareModal(); return; }
     if (activityEditId) { closeActivityModal(); return; }
-    if (lodgingEditPlaceId) closeLodgingModal();
+    if (lodgingEditPlaceId) { closeLodgingModal(); return; }
+    if (document.body.classList.contains('map-expanded')) {
+      document.body.classList.remove('map-expanded');
+      if (mapHandle) mapHandle.setAttribute('aria-expanded', 'false');
+    }
   });
 }
 
