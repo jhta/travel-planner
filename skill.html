@@ -142,7 +142,7 @@
   },
   "activities": [ /* see Activity */ ],
   "transportTo": {                     // optional; lives on the DESTINATION place
-    "mode": "Domestic flight",
+    "mode": "flight",
     "duration": "1h",
     "notes": "MS091 Cairo → Luxor",
     "link": "https://..."
@@ -165,6 +165,7 @@
   <li>Checklist items (<code>documents</code>, <code>packing</code>) use <code>name</code>/<code>checked</code>. <strong>NOT</strong> <code>text</code>/<code>done</code>. Mixing them silently renders empty rows in the UI.</li>
   <li>Activities use <code>text</code>/<code>done</code>. Confusingly opposite.</li>
   <li><code>transportTo</code> lives on the <strong>destination</strong> place: <code>places[i+1].transportTo</code> describes how you got from <code>places[i]</code>. The first place has no <code>transportTo</code>.</li>
+  <li><code>transportTo.mode</code> must be one of: <code>flight</code> (domestic), <code>flight-intl</code> (international), <code>train</code>, <code>metro</code>, <code>tram</code>, <code>taxi</code>, <code>bus</code>, <code>car</code>, <code>ferry</code>, <code>walk</code>, <code>bike</code>. Anything else (e.g. "Subway") silently renders as Flight. Put the line or flight number in <code>notes</code>.</li>
   <li>Set <code>photoUrl: null</code> and <code>imageUrl: null</code> always — the app fetches landmark photos client-side. Never invent image URLs.</li>
   <li>All dates are <code>YYYY-MM-DD</code>. Place dates must be within the trip's <code>startDate</code>/<code>endDate</code>. <code>departure ≥ arrival</code>.</li>
   <li>ID prefixes: <code>t-</code> trip, <code>p-</code> place, <code>a-</code> activity, <code>doc-</code> document, <code>pk-</code> packing, <code>f-</code> food. Keep them unique within the trip and human-readable (<code>p-cairo</code>, <code>a-cairo-pyramids</code>).</li>
@@ -180,7 +181,7 @@
   <li><strong>Destinations</strong>. Ask which cities/regions. Recommend a realistic minimum stay per place (Cairo 3, Tokyo 4, Petra 1–2, Lisbon 3). Help split <code>arrival</code>/<code>departure</code> across the trip range. Push back gently if the user is overpacking the itinerary.</li>
   <li><strong>Lodging per place</strong>. Ask budget tier (budget / mid / luxury / boutique / hostel) and area preference (city center / near transit / scenic). Suggest 2–3 named hotels with one-line reasoning each. Set <code>lodging</code> only when the user picks; otherwise leave undefined.</li>
   <li><strong>Activities per place</strong>. Suggest 4–8 concrete activities per place, ordered must-see → optional. Mix sights, food experiences, walking, downtime. Tag each with <code>day</code> if the user wants a paced itinerary; otherwise leave <code>day</code> undefined. If more than one person is traveling, ask which activities are shared and which belong to one person. Set <code>who</code> to that person's id, and leave it off shared activities.</li>
-  <li><strong>Transport between places</strong>. For each adjacent pair, suggest mode (flight / train / drive / ferry / bus) and rough duration. Add to <code>places[i+1].transportTo</code>. Skip the first place.</li>
+  <li><strong>Transport between places</strong>. For each adjacent pair, suggest mode (flight / flight-intl / train / metro / tram / taxi / bus / car / ferry / walk / bike) and rough duration. Add to <code>places[i+1].transportTo</code>. Skip the first place.</li>
   <li><strong>Trip-level flights</strong>. Outbound + inbound flight numbers and booking refs if known. Skip the field if not booked yet (still include <code>flights: { outbound: { number: "", booking: "" }, inbound: { ... } }</code>).</li>
   <li><strong>Nationality + documents</strong>. Ask: <em>"What passport(s) are travelling?"</em> Build the <code>documents</code> checklist with: passport (with validity rule), visa for each destination (note entry method: e-visa / on-arrival / consulate-only / visa-free), travel insurance, vaccine certs if endemic disease applies, IDP if renting cars, copies of bookings. Always end the list with: <em>"Verify all visa/document requirements with each destination's consulate before travel — rules change."</em></li>
   <li><strong>Packing</strong>. Climate-aware. Infer season from dates + region; ask about specific activities (hiking, formal dinners, religious sites with dress codes, beach, snow). Suggest 10–18 items. Don't recommend bulky jackets for warm climates.</li>

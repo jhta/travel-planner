@@ -3074,8 +3074,12 @@ function svgIcon(path, { size = 12, strokeWidth = 1.5, className = '' } = {}) {
 }
 
 const TRANSPORT_MODES = [
-  { id: 'flight', label: 'Flight', icon: '✈' },
+  { id: 'flight', label: 'Domestic flight', icon: '✈' },
+  { id: 'flight-intl', label: 'International flight', icon: '✈' },
   { id: 'train', label: 'Train', icon: '🚆' },
+  { id: 'metro', label: 'Metro', icon: '🚇' },
+  { id: 'tram', label: 'Tram', icon: '🚋' },
+  { id: 'taxi', label: 'Taxi', icon: '🚕' },
   { id: 'bus', label: 'Bus', icon: '🚌' },
   { id: 'car', label: 'Car', icon: '🚗' },
   { id: 'ferry', label: 'Ferry', icon: '⛴' },
