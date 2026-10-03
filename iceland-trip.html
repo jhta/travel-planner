@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Iceland Ring Road — Trip Log</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root {
+    --bg: #faf8f3;
+    --bg-elev: #ffffff;
+    --fg: #031109;
+    --fg-muted: #818d92;
+    --accent: #fb8f67;
+    --accent-fg: #ffffff;
+    --accent-soft: rgba(251, 143, 103, 0.14);
+    --gold: #d2bf55;
+    --gold-fg: #031109;
+    --lavender: #dad4ef;
+    --border: #e8e3d6;
+    --danger: #c0392b;
+    --shadow: 0 1px 3px rgba(3, 17, 9, 0.06), 0 8px 24px rgba(3, 17, 9, 0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #031109; --bg-elev: #08170f; --fg: #dad4ef; --fg-muted: #818d92;
+      --accent: #fb8f67; --accent-fg: #031109; --accent-soft: rgba(251,143,103,0.16);
+      --gold: #d2bf55; --gold-fg: #031109; --lavender: #dad4ef; --border: #122118;
+      --danger: #fb8f67; --shadow: 0 6px 20px rgba(0,0,0,0.55);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column; height: 100vh;
+  }
+
+  .app-header {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+    padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--bg-elev); flex-shrink: 0;
+  }
+  .app-header h1 { font-size: 14px; font-weight: 600; margin: 0; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-muted); }
+  .header-stats { display: flex; gap: 8px; flex-wrap: wrap; }
+  .stat-chip { font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 999px; background: var(--accent-soft); color: var(--fg); }
+  .stat-chip b { color: var(--accent); font-weight: 700; }
+
+  .app-main { flex: 1; display: grid; grid-template-columns: 1fr 42%; min-height: 0; }
+  @media (max-width: 900px) {
+  html, body { height: auto; }
+  body { overflow: visible; }
+  .app-main { flex: none; display: flex; flex-direction: column; overflow: visible; min-height: 0; }
+}
+
+  .sidebar { border-right: 1px solid var(--border); background: var(--bg); overflow-y: auto; padding: 26px 30px 90px; display: flex; flex-direction: column; gap: 18px; }
+
+  .trip-title-block { padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .trip-title { font-size: 29px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin: 0 0 6px 0; }
+  .trip-dates { font-size: 14px; color: var(--fg-muted); margin: 0; }
+  .trip-note { margin-top: 12px; font-size: 13px; color: var(--fg-muted); background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; line-height: 1.5; }
+
+  .alert-card { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 10px; }
+  .alert-card .mark { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+  .alert-card p { margin: 0; font-size: 13.5px; line-height: 1.5; }
+
+  .places-list { display: flex; flex-direction: column; gap: 4px; }
+
+  .place-card { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); overflow: hidden; box-shadow: var(--shadow); transition: border-color 0.15s, box-shadow 0.15s; cursor: pointer; scroll-margin-top: 20px; }
+  .place-card:hover { border-color: var(--fg-muted); }
+  .place-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow); }
+
+  .place-row { display: grid; grid-template-columns: 100px 1fr auto; gap: 14px; padding: 12px; align-items: center; }
+  .place-row .thumb { width: 100px; height: 100px; border-radius: 10px; overflow: hidden; background: linear-gradient(135deg, var(--accent) 0%, var(--gold) 100%); flex-shrink: 0; position: relative; display: flex; align-items: center; justify-content: center; font-size: 26px; }
+  .place-row .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .place-row .thumb.loading { animation: shimmer 1.4s ease-in-out infinite; }
+  @keyframes shimmer { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+
+  .place-row .info { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .place-row .name-row { display: flex; align-items: center; gap: 9px; min-width: 0; flex-wrap: wrap; }
+  .place-row .order { background: var(--gold); color: var(--gold-fg); width: 23px; height: 23px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .place-row .place-name { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
+  .place-row .place-dates { margin: 0; font-size: 12.5px; color: var(--fg-muted); }
+  .badge { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
+  .badge-flex { background: var(--accent-soft); color: var(--accent); }
+  .badge-book { background: var(--lavender); color: #2c2650; }
+
+  .place-desc { padding: 2px 14px 0; font-size: 13.5px; line-height: 1.55; color: var(--fg); }
+  .place-lodging { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-top: 1px dashed var(--border); font-size: 12.5px; color: var(--fg-muted); margin-top: 10px; }
+  .place-lodging b { color: var(--fg); font-weight: 600; }
+  .place-note { padding: 8px 14px 0; font-size: 12.5px; color: var(--fg-muted); line-height: 1.45; }
+
+  .activities { border-top: 1px solid var(--border); padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 9px; background: linear-gradient(180deg, var(--accent-soft) 0%, transparent 60%); }
+  .activities-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .activities-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--fg-muted); font-weight: 700; }
+  .activities-day-total { font-size: 11px; color: var(--fg-muted); font-weight: 600; }
+  .activities-day + .activities-day { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+  .activity-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .activity-item { display: grid; grid-template-columns: 16px 1fr auto; gap: 9px; align-items: start; }
+  .activity-dot { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--fg-muted); margin-top: 1px; flex-shrink: 0; }
+  .activity-dot.book { border-color: var(--accent); background: var(--accent-soft); }
+  .activity-item.star { background: var(--accent-soft); border-radius: 8px; margin: 0 -6px; padding: 4px 6px; }
+  .activity-item.star .activity-dot { border-color: var(--gold); }
+  .star-icon { color: var(--gold); font-size: 12px; }
+  .activity-text { font-size: 13.5px; line-height: 1.45; font-weight: 400; }
+  .activity-item.star .activity-text { font-weight: 600; }
+  .activity-text .sub { display: block; color: var(--fg-muted); font-size: 12px; margin-top: 3px; font-weight: 400; }
+  .activity-time {
+    font-size: 10.5px; font-weight: 700; color: var(--fg-muted);
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+    align-self: start; margin-top: 1px;
+  }
+
+  .transport-chip { align-self: center; display: inline-flex; align-items: center; gap: 7px; padding: 6px 14px; margin: 2px 0 2px 34px; border-radius: 999px; background: var(--accent-soft); color: var(--fg); font-size: 12px; font-weight: 600; }
+  .transport-chip .icon { font-size: 13px; }
+
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 4px; }
+  @media (max-width: 640px) { .panels { grid-template-columns: 1fr; } }
+  .trip-section { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; }
+  .trip-section .section-title { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--fg-muted); font-weight: 600; }
+  .checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .checklist-item { display: flex; align-items: center; gap: 10px; padding: 4px 2px; font-size: 13.5px; }
+  .checklist-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; margin: 0; }
+  .checklist-name { flex: 1; min-width: 0; }
+  .checklist-item.checked .checklist-name { text-decoration: line-through; color: var(--fg-muted); }
+  .visa-note { margin-top: 4px; font-size: 12px; color: var(--danger); border-left: 2px solid var(--danger); padding-left: 10px; }
+  .food-empty { margin: 0; font-size: 13px; color: var(--fg-muted); font-style: italic; }
+
+  #map-shell { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-left: 1px solid var(--border); position: relative; }
+  #map { width: 100%; height: 100%; flex: 1; min-height: 0; }
+  @media (max-width: 900px) {
+    #map-shell { order: -1; height: 45vh; flex-shrink: 0; border-left: none; border-bottom: 1px solid var(--border); position: relative; }
+    .sidebar { order: 1; overflow: visible; }
+  }
+
+  .map-toolbar {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 500;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg-elev); border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 8px 6px 14px; box-shadow: var(--shadow);
+  }
+  .map-toolbar button {
+    font: inherit; border: none; background: var(--accent-soft); color: var(--fg);
+    border-radius: 999px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .map-toolbar button:hover { filter: brightness(0.97); }
+  .map-toolbar button:disabled { opacity: 0.4; cursor: default; }
+  .map-toolbar .step-label { font-size: 12px; color: var(--fg-muted); font-weight: 600; min-width: 64px; text-align: center; }
+
+  .map-pin { background: transparent; border: none; }
+  .map-pin .pin-inner {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--gold); color: var(--gold-fg);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px; border: 2px solid var(--bg);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+    transition: transform 0.2s cubic-bezier(.2,.8,.2,1), background 0.15s, box-shadow 0.2s;
+  }
+  .map-pin.flex .pin-inner { background: var(--accent); color: var(--accent-fg); }
+  .map-pin:hover .pin-inner { transform: scale(1.08); }
+  .map-pin.selected .pin-inner { background: var(--accent); color: var(--accent-fg); transform: scale(1.3); box-shadow: 0 4px 14px rgba(0,0,0,0.55); z-index: 1000; }
+  .map-pin.pending { opacity: 0; transform: scale(0.4); }
+  .map-pin.pop-in { animation: pop-in 0.4s cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes pop-in { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }
+
+  .sub-pin { background: transparent; border: none; }
+  .sub-pin-inner {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--bg-elev); color: var(--fg-muted);
+    border: 1.5px solid var(--fg-muted);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 9px; line-height: 1;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+  .sub-pin-inner.pop-in { animation: pop-in 0.3s cubic-bezier(.2,.8,.2,1) both; }
+
+  @media (prefers-color-scheme: dark) {
+    .leaflet-tile { filter: brightness(0.75) contrast(1.05) hue-rotate(170deg) invert(0.92) saturate(0.7); }
+  }
+
+  .leaflet-popup-content-wrapper { background: var(--bg-elev); color: var(--fg); border-radius: 8px; }
+  .leaflet-popup-tip { background: var(--bg-elev); }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>Travel Planner · Iceland Field Copy</h1>
+  <div class="header-stats">
+    <span class="stat-chip"><b>12</b> nights</span>
+    <span class="stat-chip"><b>12</b> stops</span>
+    <span class="stat-chip"><b>4</b> friends · <b>1</b> camper</span>
+    <span class="stat-chip"><b>0</b> F-roads</span>
+  </div>
+</header>
+
+<div class="app-main">
+  <div class="sidebar" id="sidebar">
+
+    <div class="trip-title-block">
+      <h2 class="trip-title">Iceland — Ring Road, Glaciers &amp; Westfjords</h2>
+      <p class="trip-dates">Sep 11 – Sep 23, 2026</p>
+      <div class="trip-note">4 friends, 1 camper van (already booked). Adventure / trekking / photo focus. No F-roads — the camper isn't rated for the highlands. Land early morning day 1 (pick up van + groceries, start driving midday). Don't sleep in Reykjavík the last night — deliver the van early morning and walk the city before flying out.</div>
+    </div>
+
+    <div class="alert-card">
+      <span class="mark">!</span>
+      <p><b>Book now:</b> the Svínafellsjökull glacier hike (stop 5) still fills up in mid-September. Reserve with Icelandic Mountain Guides, Glacier Guides, or Extreme Iceland before you land.</p>
+    </div>
+
+    <div class="places-list" id="places-list"></div>
+
+    <div class="panels">
+      <div class="trip-section">
+        <p class="section-title">Documents</p>
+        <ul class="checklist" id="doc-list">
+          <li class="checklist-item"><input type="checkbox" data-key="doc-1"><span class="checklist-name">Passport (6+ months validity recommended)</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="doc-2"><span class="checklist-name">Travel insurance, incl. outdoor / glacier-hiking cover</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="doc-3"><span class="checklist-name">Driver's license valid for Iceland (check if IDP needed)</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="doc-4"><span class="checklist-name">Camper van rental confirmation + insurance docs</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="doc-5"><span class="checklist-name">Glacier hike booking confirmation (Svínafellsjökull)</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="doc-6"><span class="checklist-name">Visa / entry requirement — verify per nationality</span></li>
+        </ul>
+        <div class="visa-note">Entry rules vary by nationality and change — confirm with Iceland's consulate before travel.</div>
+      </div>
+      <div class="trip-section">
+        <p class="section-title">Packing</p>
+        <ul class="checklist" id="pack-list">
+          <li class="checklist-item"><input type="checkbox" data-key="pk-1"><span class="checklist-name">Waterproof hardshell jacket</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-2"><span class="checklist-name">Warm mid-layer (fleece or down)</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-3"><span class="checklist-name">Waterproof hiking boots, broken in</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-4"><span class="checklist-name">Wool base layers, top + bottom</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-5"><span class="checklist-name">Warm hat + gloves</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-6"><span class="checklist-name">Buff / neck gaiter</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-7"><span class="checklist-name">Wool socks, several pairs</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-8"><span class="checklist-name">Swimwear — hot springs &amp; lagoons</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-9"><span class="checklist-name">Headlamp / flashlight</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-10"><span class="checklist-name">Power bank + chargers</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-11"><span class="checklist-name">Tripod — photography + northern lights</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-12"><span class="checklist-name">Daypack for hikes</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-13"><span class="checklist-name">Sunglasses + sunscreen</span></li>
+          <li class="checklist-item"><input type="checkbox" data-key="pk-14"><span class="checklist-name">Cash + card — some showers are cash-only</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="trip-section">
+      <p class="section-title">Food &amp; drink</p>
+      <p class="food-empty">To be filled in later.</p>
+    </div>
+
+  </div>
+
+  <div id="map-shell">
+    <div class="map-toolbar">
+      <button id="btn-replay" title="Replay the route from stop 1">↻ Replay route</button>
+      <span class="step-label" id="step-label">12 / 12</span>
+      <button id="btn-prev" title="Previous stop">◀</button>
+      <button id="btn-next" title="Next stop">▶</button>
+    </div>
+    <div id="map"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>
+<script>
+  const PLACES = [
+    {
+      id: 'p1', order: 1, name: 'Golden Circle', dates: 'Sep 11 → 13', lat: 64.1325, lng: -20.2977,
+      note: 'Land early morning, collect the camper in Reykjavík, groceries, then drive out — starts midday. Two nights here, not one — this loop has more in it than a single afternoon can hold.',
+      description: 'Iceland’s most-visited loop, and for good reason. Þingvellir sits in a rift valley where the North American and Eurasian tectonic plates are visibly pulling apart — it’s also where Iceland’s parliament, the Alþingi, was founded in 930 AD. Geysir gave the English language the word "geyser"; its neighbor Strokkur erupts every 5–10 minutes. Kerið is a 3,000-year-old explosion crater with red scoria slopes cupping a still, green-black lake. Brúarfoss — "bridge falls" — is arguably Iceland’s bluest waterfall, hidden a short walk off the main road and easy to drive past without knowing it’s there. Gullfoss drops the glacial Hvítá river over two tiers into a canyon. The second night buys you Reykjadalur: a valley above Hveragerði where a geothermal river runs warm enough to lie back in, free, with no ticket booth in sight.',
+      lodging: null,
+      photoQuery: 'Gullfoss',
+      activities: [
+        { day: 'Sep 11', text: 'Þingvellir National Park', time: '~1–1.5h', sub: 'UNESCO site — walk the rift valley, snorkel/dive Silfra fissure if you’re keen', lat: 64.2559, lng: -21.1298 },
+        { day: 'Sep 11', text: 'Strokkur Geyser', time: '~30min', sub: 'Erupts roughly every 5–10 minutes, up to 20m', lat: 64.3145, lng: -20.3049 },
+        { day: 'Sep 11', text: 'Brúarfoss', time: '~30min', sub: 'Iceland’s bluest waterfall — ~15min walk from the car park, easy to miss', lat: 64.2643, lng: -20.5157 },
+        { day: 'Sep 11', text: 'Gullfoss Falls', time: '~45min', sub: 'Two-tiered waterfall on the Hvítá river', star: true, lat: 64.3271, lng: -20.1199 },
+        { day: 'Sep 11', text: 'Friðheimar', time: '~1h', sub: 'Tomato farm restaurant — good lunch or dinner stop', lat: 64.1775, lng: -20.4449 },
+        { day: 'Sep 12', text: 'Reykjadalur Hot Spring hike', time: '~3h', sub: 'Free, natural geothermal river — ~45min uphill walk each way, bring a towel', star: true, lat: 64.0087, lng: -21.2185 },
+        { day: 'Sep 12', text: 'Kerið Crater', time: '~20min', sub: 'Volcanic crater lake, red scoria slopes, small entry fee — on the way back down from Reykjadalur', lat: 64.0413, lng: -20.8851 },
+        { day: 'Sep 12', text: 'Hrunalaug hot spring', time: '~1.5h', sub: 'Wind-down soak, small and low-key', lat: 64.1328, lng: -20.2551 },
+      ],
+    },
+    {
+      id: 'p2', order: 2, name: 'Vík — South Coast', dates: 'Sep 13 → 14', lat: 63.4203, lng: -18.9813,
+      lodging: 'Vik Camping',
+      description: 'Vík í Mýrdal is mainland Iceland’s southernmost village — a strip of houses under a red-roofed church, facing the Atlantic and the offshore sea stacks of Reynisdrangar. It’s the natural base for the South Coast’s waterfall cluster and your first real glacier contact: Sólheimajökull is an outlet tongue of the Mýrdalsjökull ice cap, sitting atop the Katla volcano.',
+      photoQuery: 'Vík í Mýrdal',
+      activities: [
+        { text: 'Seljalandsfoss + Gljúfrabúi', time: '~45min', sub: 'Walk fully behind Seljalandsfoss; Gljúfrabúi hides in a canyon next door', lat: 63.6156, lng: -19.9886 },
+        { text: 'Skógafoss + Kvernufoss', time: '~1.5h', sub: 'Skógafoss is the classic postcard shot; Kvernufoss nearby is quieter, also walk-behind', star: true, lat: 63.5321, lng: -19.5111 },
+        { text: 'Sólheimajökull', time: '~2.5h', sub: 'Easy glacier-tongue walk, no guide strictly required but recommended for crevasse awareness', lat: 63.5292, lng: -19.3702 },
+      ],
+    },
+    {
+      id: 'p3', order: 3, name: 'Þakgil', dates: 'Sep 14 → 15', lat: 63.5309, lng: -18.8887,
+      lodging: 'Þakgil-camp ground',
+      note: 'Canyon campsite off Route 1 — short gravel access road, fine for the camper.',
+      description: 'Tucked behind Mýrdalsjökull, Þakgil is a green canyon campsite ringed by rhyolite and palagonite cliffs — a different, quieter register from Vík’s tourist strip just down the road. It doubles as a base for the south coast’s black-sand icons before you push east toward the ice cap proper.',
+      photoQuery: 'Reynisfjara',
+      activities: [
+        { text: 'Reynisfjara black sand beach + basalt columns', time: '~45min', sub: 'Watch the surf from a safe distance — sneaker waves here are genuinely dangerous', star: true, lat: 63.4038, lng: -19.0398 },
+        { text: 'Dyrhólaey Lighthouse viewpoint', time: '~30min', sub: 'Arch rock formation, puffins in season', lat: 63.4022, lng: -19.1264 },
+        { text: 'Víkurfjara black sand beach', time: '~30min', sub: 'Reynisdrangar sea stacks visible offshore', lat: 63.4183, lng: -19.0022 },
+        { text: 'Explore Þakgil canyon trails', time: '~1.5h', sub: null, lat: 63.5309, lng: -18.8887 },
+      ],
+    },
+    {
+      id: 'p4', order: 4, name: 'Skaftafell', dates: 'Sep 15 → 16', lat: 64.0166, lng: -16.975,
+      lodging: 'Skaftafell Campground',
+      description: 'A nature reserve folded into Vatnajökull National Park, Skaftafell is a green oasis wedged between two glacier tongues. The trail to Svartifoss climbs through birch woods to a waterfall framed by dark hexagonal basalt columns — the same columns that inspired the shape of Reykjavík’s Hallgrímskirkja church.',
+      photoQuery: 'Svartifoss',
+      activities: [
+        { text: 'Fjaðrárgljúfur canyon', time: '~1h', sub: 'Serpentine moss-lined canyon, short rim walk', lat: 63.7713, lng: -18.1718 },
+        { text: 'Svartifoss', time: '~1.5h', sub: 'Skaftafell’s signature trail, round trip', star: true, lat: 64.0275, lng: -16.9753 },
+      ],
+    },
+    {
+      id: 'p5', order: 5, name: 'Svínafell / Jökulsárlón', dates: 'Sep 16 → 17', lat: 64.0016, lng: -16.8812,
+      lodging: 'Tjaldsvæðið í Svínafelli',
+      book: true,
+      description: 'Svínafellsjökull is an outlet glacier of Vatnajökull, Europe’s largest ice cap by volume — its crevassed, blue-white surface has stood in for fictional worlds on screen more than once. A short drive further, Jökulsárlón is where centuries-old ice calves off Breiðamerkurjökull and drifts as icebergs across a lagoon before washing up, polished and glass-clear, on the black sand of Diamond Beach across the road.',
+      photoQuery: 'Jökulsárlón',
+      activities: [
+        { text: 'Guided glacier hike on Svínafellsjökull', time: '~3h', sub: 'Crampons + ice axe provided. Book with Icelandic Mountain Guides / Glacier Guides / Extreme Iceland.', lat: 64.0016, lng: -16.8812 },
+        { text: 'Jökulsárlón Glacier Lagoon', time: '~1h', sub: 'Boat tours available if you want to get among the icebergs', star: true, lat: 64.0489, lng: -16.1958 },
+        { text: 'Diamond Beach', time: '~30min', sub: 'Directly across the road from Jökulsárlón', lat: 64.0453, lng: -16.1793 },
+        { text: 'Mulagljufur Canyon', time: '~45min', sub: 'Less-visited canyon nearby, good for a quieter photo stop', lat: 64.0164, lng: -16.3659 },
+      ],
+    },
+    {
+      id: 'p6', order: 6, name: 'Höfn / Stokksnes', dates: 'Sep 17 → 18', lat: 64.2464, lng: -14.9699,
+      lodging: 'Vestrahorn Camping',
+      description: 'Höfn calls itself Iceland’s lobster capital — worth a langoustine detour if the campstove needs a night off. Just outside town, Stokksnes is private land with a small entrance fee, but it buys you one of Iceland’s most photographed views: black sand dunes rippling in front of Vestrahorn’s jagged peaks, best at sunrise or sunset when the light rakes across the dune grass.',
+      photoQuery: 'Vestrahorn',
+      activities: [
+        { text: 'Stokksnes black sand dunes', time: '~1h', sub: 'Small entrance fee to the private viewpoint (Viking Café)', lat: 64.2464, lng: -14.9699 },
+        { text: 'Vestrahorn mountain — sunrise/sunset photography', time: '~1.5h', sub: null, star: true, lat: 64.2500, lng: -14.9750 },
+      ],
+    },
+    {
+      id: 'p7', order: 7, name: 'Djúpivogur — East Fjords', dates: 'Sep 18 → 19', lat: 64.6552, lng: -14.2887,
+      lodging: 'Berunes Campsite',
+      description: 'The East Fjords slow the trip down — narrow roads hugging steep fjord walls, fishing hamlets instead of tour buses. Djúpivogur’s harbor holds "Eggin í Gleðivík," 34 stone eggs each modeled on a local bird species. Inland, Stuðlagil Canyon only became a destination around 2016, after a dam diverted the glacial river and exposed a turquoise pool framed by basalt columns on both banks.',
+      photoQuery: 'Stuðlagil Canyon',
+      activities: [
+        { text: 'Djúpivogur village walk', time: '~30min', sub: 'See the 34 stone eggs at Eggin í Gleðivík', lat: 64.6552, lng: -14.2887 },
+        { text: 'Stuðlagil Canyon', time: '~2h', sub: 'Best light midday; a short hike gets you down to the basalt-column pool', star: true, lat: 65.0700, lng: -15.7960 },
+        { text: 'Vök Baths', time: '~1.5h', sub: 'Geothermal floating pools on Lake Urriðavatn, near Egilsstaðir', lat: 65.2400, lng: -14.3900 },
+      ],
+    },
+    {
+      id: 'p8', order: 8, name: 'Mývatn — North', dates: 'Sep 19 → 20', lat: 66.0175, lng: -16.5028,
+      lodging: 'Ásbyrgi campground',
+      description: 'This corner of the north sits on some of Iceland’s most active geology. Dettifoss, fed by glacial meltwater off Vatnajökull, is often cited as Europe’s most powerful waterfall by volume — a short walk upstream, Selfoss is a wide, horseshoe-shaped falls in the same Jökulsárgljúfur canyon, easy to combine with the same stop. Hverir is a bare, sulfur-yellow field of boiling mud pots and hissing fumaroles. Dimmuborgir—"Dark Castles"—is a lava field of black rock spires and arches you can walk straight through.',
+      photoQuery: 'Dettifoss',
+      activities: [
+        { text: 'Dettifoss waterfall', time: '~45min', sub: 'Reachable by paved road on the west side (Route 862)', star: true, lat: 65.8146, lng: -16.3835 },
+        { text: 'Selfoss waterfall', time: '~30min', sub: 'Same canyon as Dettifoss, a short walk upstream — easy to combine', lat: 65.8020, lng: -16.3900 },
+        { text: 'Hverir geothermal area', time: '~30min', sub: 'Stay on marked paths — ground can be unstable and scalding', lat: 65.6408, lng: -16.8017 },
+        { text: 'Dimmuborgir lava field', time: '~1h', sub: 'A network of short walking loops through the formations', lat: 65.6014, lng: -16.8993 },
+        { text: 'Goðafoss waterfall', time: '~30min', sub: '"Waterfall of the gods" — a short detour on the way west', lat: 65.6828, lng: -17.5490 },
+      ],
+    },
+    {
+      id: 'p9', order: 9, name: 'Skagafjörður — Sæberg', dates: 'Sep 20 → 21', lat: 65.3494, lng: -20.9764,
+      lodging: 'Sæberg — hostel, camping and cottages',
+      description: 'Skagafjörður is the heartland of Icelandic horse breeding — expect pastures full of the short, sturdy, five-gaited breed as you drive through. Hofsós’s public pool is unassuming from the car park but opens onto an infinity edge overlooking the fjord, one of the country’s most quietly spectacular swims. Grafarkirkja, a tiny turf-roofed timber church, is one of Iceland’s oldest surviving buildings.',
+      photoQuery: 'Hofsós',
+      activities: [
+        { text: 'Hofsós Sundlaug', time: '~1h', sub: 'Small public pool with an infinity view over the fjord', star: true, lat: 65.8836, lng: -19.4283 },
+        { text: 'Grafarkirkja turf church', time: '~20min', sub: 'One of Iceland’s oldest wooden churches, still consecrated', lat: 65.7333, lng: -19.5333 },
+      ],
+    },
+    {
+      id: 'p10', order: 10, name: 'Flókalundur — Westfjords', dates: 'Sep 21 → 22', lat: 65.5228, lng: -23.3325,
+      lodging: 'Flókalundur Campsite',
+      flex: true,
+      note: 'Westfjords roads are gravel, not F-roads — fine for the camper, just slower going.',
+      description: 'Flókalundur is named for Hrafna-Flóki, one of the first Norse settlers, who reputedly wintered nearby before naming the whole country "Iceland." The Westfjords see a fraction of the Ring Road’s traffic — Rauðasandur is one of the few red-golden sand beaches in a country dominated by black sand. Látrabjarg, the westernmost point of Iceland, holds towering seabird cliffs; puffins thin out by September but the cliffs and Atlantic views are worth it regardless.',
+      photoQuery: 'Rauðasandur',
+      activities: [
+        { text: 'Rauðasandur', time: '~1.5h', sub: 'Red/golden sand beach, a rare color for Iceland', lat: 65.4667, lng: -23.8667 },
+        { text: 'Látrabjarg bird cliffs', time: '~1.5h', sub: 'Westernmost point of Iceland; puffins mostly gone by September but the cliffs still deliver', star: true, lat: 65.5044, lng: -24.5310 },
+      ],
+    },
+    {
+      id: 'p11', order: 11, name: 'Húsafell — approach night', dates: 'Sep 22 → 23', lat: 64.6928, lng: -20.8975,
+      lodging: 'Húsafell Camping',
+      note: 'Positioned close to Reykjavík for an early van return the next morning. A long driving day — Dynjandi, then Húsafell. Drop Kirkjufell first if the day runs late; nothing later depends on it.',
+      description: 'The drive out of the Westfjords passes Dynjandi — often called the Westfjords’ own Gullfoss, actually a series of cascades stacked over roughly 100m, widening as they fall like a bridal veil, with a short trail alongside it that gives you a waterfall at nearly every switchback. Húsafell itself is a wooded retreat in Borgarfjörður, historically a farm and church site, now a base for exploring lava caves and the edge of Langjökull. Glymur, a short detour away, was Iceland’s tallest known waterfall until a 2007 glacial-lake collapse revealed a taller one — the hike involves a log-crossing over the river, which adds a bit of real adventure to an otherwise easy trail.',
+      photoQuery: 'Glymur',
+      activities: [
+        { text: 'Dynjandi waterfall', time: '~1h', sub: 'En route out of the Westfjords — short trail climbs past several smaller falls to the main cascade', star: true, lat: 65.7160, lng: -23.2090 },
+        { text: 'Kirkjufell + Kirkjufellsfoss', time: '~2.5h', sub: 'Optional Snæfellsnes detour via Route 54 (incl. drive) — skip without regret if the day runs long', lat: 64.9376, lng: -23.3096 },
+        { text: 'Glymur waterfall', time: '~3h', sub: 'Short hike near Hvalfjörður, includes a log river-crossing', lat: 64.3986, lng: -21.2517 },
+      ],
+    },
+    {
+      id: 'p12', order: 12, name: 'Reykjavík — return & departure', dates: 'Sep 23', lat: 64.1466, lng: -21.9426,
+      note: 'Deliver the camper van early morning, then walk the city before flying out. No overnight here.',
+      description: 'The world’s northernmost capital, small enough to cover on foot in a morning. Hallgrímskirkja’s tower echoes the basalt columns you’ve been photographing all trip; Harpa’s glass facade catches the harbor light; the Sun Voyager sculpture faces out to sea as a quiet, fitting last stop before the airport.',
+      photoQuery: 'Reykjavík',
+      activities: [
+        { text: 'Walk Reykjavík', time: '~3h', sub: 'Hallgrímskirkja, Harpa, the old harbour, Sun Voyager', lat: 64.1466, lng: -21.9426 },
+      ],
+    },
+  ];
+
+  const TRANSPORT = [
+    'Route 1 south coast · ~2.5h',
+    'Short detour off Route 1 · ~30min',
+    'Route 1 east · ~1.5h',
+    'Route 1 · ~30min',
+    'Route 1 east · ~1.5h',
+    'East Fjords coastal road · ~2h',
+    'Route 1 north via Egilsstaðir · ~2.5h',
+    'Route 1 west · ~3h',
+    'Route 60 into the Westfjords · ~3h',
+    'Exit via Route 60, past Dynjandi, south · ~4h',
+    'Route 1/50 south · ~1.5h',
+  ];
+
+  // ---------- Sidebar ----------
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderActivityList(items) {
+    return `<ul class="activity-list">
+      ${items.map(a => `
+        <li class="activity-item${a.star ? ' star' : ''}">
+          <span class="activity-dot${a.text.startsWith('Guided glacier') ? ' book' : ''}"></span>
+          <span class="activity-text">${a.star ? '<span class="star-icon" title="Don’t miss this one">★</span> ' : ''}${escapeHtml(a.text)}${a.sub ? `<span class="sub">${escapeHtml(a.sub)}</span>` : ''}</span>
+          ${a.time ? `<span class="activity-time">${escapeHtml(a.time)}</span>` : ''}
+        </li>`).join('')}
+    </ul>`;
+  }
+
+  function renderActivities(activities) {
+    const days = [...new Set(activities.map(a => a.day).filter(Boolean))];
+    if (days.length < 2) {
+      return `<div class="activities-title-row"><span class="activities-title">Activities</span></div>${renderActivityList(activities)}`;
+    }
+    return days.map(day => `
+      <div class="activities-day">
+        <div class="activities-title-row">
+          <span class="activities-title">${escapeHtml(day)}</span>
+        </div>
+        ${renderActivityList(activities.filter(a => a.day === day))}
+      </div>
+    `).join('');
+  }
+
+  function renderSidebar() {
+    const list = document.getElementById('places-list');
+    let html = '';
+    PLACES.forEach((p, i) => {
+      html += `
+        <div class="place-card" data-id="${p.id}">
+          <div class="place-row">
+            <div class="thumb loading" id="thumb-${p.id}"></div>
+            <div class="info">
+              <div class="name-row">
+                <span class="order">${p.order}</span>
+                <p class="place-name">${escapeHtml(p.name)}</p>
+                ${p.flex ? '<span class="badge badge-flex">Flex</span>' : ''}
+                ${p.book ? '<span class="badge badge-book">Booking required</span>' : ''}
+              </div>
+              <p class="place-dates">${p.dates}</p>
+            </div>
+          </div>
+          ${p.description ? `<div class="place-desc">${escapeHtml(p.description)}</div>` : ''}
+          ${p.lodging ? `<div class="place-lodging">⛺ <b>${escapeHtml(p.lodging)}</b></div>` : ''}
+          ${p.note ? `<div class="place-note">${escapeHtml(p.note)}</div>` : ''}
+          <div class="activities">
+            ${renderActivities(p.activities)}
+          </div>
+        </div>
+      `;
+      if (i < PLACES.length - 1) {
+        html += `<div class="transport-chip"><span class="icon">🚐</span> ${TRANSPORT[i]}</div>`;
+      }
+    });
+    list.innerHTML = html;
+
+    document.querySelectorAll('.place-card').forEach((card) => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('a')) return;
+        goToPlace(card.dataset.id, { scrollCard: false });
+      });
+    });
+  }
+
+  // ---------- Photo fetching (same approach as the main app: Wikidata SPARQL near-coords, then Wikipedia fallback) ----------
+
+  async function fetchWikidataImage(lat, lng) {
+    const sparql = `SELECT ?item ?image (COUNT(DISTINCT ?sitelink) AS ?fame) WHERE {
+      SERVICE wikibase:around {
+        ?item wdt:P625 ?coord.
+        bd:serviceParam wikibase:center "Point(${lng} ${lat})"^^geo:wktLiteral.
+        bd:serviceParam wikibase:radius "25".
+      }
+      ?item wdt:P18 ?image.
+      ?sitelink schema:about ?item.
+      ?sitelink schema:isPartOf [ wikibase:wikiGroup "wikipedia" ].
+      FILTER NOT EXISTS { ?item wdt:P31/wdt:P279* wd:Q486972. }
+      FILTER NOT EXISTS { ?item wdt:P31/wdt:P279* wd:Q56061. }
+      FILTER NOT EXISTS { ?item wdt:P31 wd:Q5. }
+    } GROUP BY ?item ?image ORDER BY DESC(?fame) LIMIT 1`;
+    const url = `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`;
+    try {
+      const res = await fetch(url, { headers: { Accept: 'application/sparql-results+json' } });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const raw = data.results?.bindings?.[0]?.image?.value;
+      if (!raw) return null;
+      return raw.replace(/^http:/, 'https:') + '?width=400';
+    } catch { return null; }
+  }
+
+  async function wikipediaSummaryThumb(title) {
+    const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.thumbnail?.source || data.originalimage?.source || null;
+    } catch { return null; }
+  }
+
+  async function wikipediaSearchTitle(query) {
+    const cleaned = query.replace(/\s*\([^)]*\)\s*/g, ' ').trim() || query;
+    const url = `https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=1&origin=*&search=${encodeURIComponent(cleaned)}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return Array.isArray(data?.[1]) && data[1][0] ? data[1][0] : null;
+    } catch { return null; }
+  }
+
+  async function fetchPhoto(place) {
+    const wd = await fetchWikidataImage(place.lat, place.lng);
+    if (wd) return wd;
+    const direct = await wikipediaSummaryThumb(place.photoQuery);
+    if (direct) return direct;
+    const found = await wikipediaSearchTitle(place.photoQuery);
+    if (!found) return null;
+    return await wikipediaSummaryThumb(found);
+  }
+
+  function loadPhotos() {
+    PLACES.forEach(async (p) => {
+      const el = document.getElementById(`thumb-${p.id}`);
+      if (!el) return;
+      const url = await fetchPhoto(p);
+      el.classList.remove('loading');
+      if (url) {
+        el.innerHTML = `<img src="${url}" alt="${escapeHtml(p.name)}" loading="lazy" onerror="this.parentElement.innerHTML='📍'">`;
+      } else {
+        el.innerHTML = '📍';
+      }
+    });
+  }
+
+  // ---------- Map ----------
+  // Same Leaflet setup + per-segment arrow decorators as the main app, plus a
+  // one-by-one reveal: markers and route segments are added in sequence rather
+  // than all at once, with Prev/Next/Replay controls to step through stops.
+
+  let map, markersLayer, polylineLayer, arrowsLayer, placeMarkers = {};
+  let subMarkersLayer, subLinesLayer;
+  let selectedPlaceId = null;
+  let revealedCount = 0; // how many stops have been placed on the map so far
+  let animTimer = null;
+
+  function themeColor(name, fallback) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  }
+
+  function initMap() {
+    map = L.map('map', { zoomControl: true }).setView([PLACES[0].lat, PLACES[0].lng], 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map);
+    markersLayer = L.layerGroup().addTo(map);
+    polylineLayer = L.layerGroup().addTo(map);
+    arrowsLayer = L.layerGroup().addTo(map);
+    subLinesLayer = L.layerGroup().addTo(map);
+    subMarkersLayer = L.layerGroup().addTo(map);
+
+    document.getElementById('btn-next').addEventListener('click', () => stepTo(revealedCount + 1));
+    document.getElementById('btn-prev').addEventListener('click', () => stepTo(revealedCount - 1));
+    document.getElementById('btn-replay').addEventListener('click', playRoute);
+
+    playRoute();
+  }
+
+  function placeMarkerFor(i) {
+    const place = PLACES[i];
+    const icon = L.divIcon({
+      className: 'map-pin' + (place.flex ? ' flex' : '') + (place.id === selectedPlaceId ? ' selected' : ''),
+      html: `<div class="pin-inner pop-in">${i + 1}</div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+    });
+    const m = L.marker([place.lat, place.lng], { icon }).addTo(markersLayer);
+    m.bindPopup(`<strong>${escapeHtml(place.name)}</strong><br>${place.dates}`);
+    m.on('click', () => goToPlace(place.id, { scrollCard: true }));
+    placeMarkers[place.id] = m;
+    return m;
+  }
+
+  // Small numbered sub-points (1.1, 1.2, ...) for every activity that has its
+  // own coordinates, connected by a thin line in visiting order — makes the
+  // actual route within a stop visible, not just the jump between camps.
+  function placeSubMarkersFor(i) {
+    const place = PLACES[i];
+    const pts = place.activities.filter(a => typeof a.lat === 'number' && typeof a.lng === 'number');
+    if (!pts.length) return;
+
+    const muted = themeColor('--fg-muted', '#818d92');
+    const line = [[place.lat, place.lng], ...pts.map(a => [a.lat, a.lng])];
+    L.polyline(line, { color: muted, weight: 1.5, opacity: 0.6, dashArray: '2 5' }).addTo(subLinesLayer);
+
+    pts.forEach((a, j) => {
+      const icon = L.divIcon({
+        className: 'sub-pin',
+        html: `<div class="sub-pin-inner pop-in">${place.order}.${j + 1}</div>`,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11],
+      });
+      const sm = L.marker([a.lat, a.lng], { icon }).addTo(subMarkersLayer);
+      sm.bindPopup(`<strong>${place.order}.${j + 1} — ${escapeHtml(a.text)}</strong>${a.time ? `<br>${escapeHtml(a.time)}` : ''}`);
+    });
+  }
+
+  function clearSubMarkersUpTo(count) {
+    subLinesLayer.clearLayers();
+    subMarkersLayer.clearLayers();
+    for (let i = 0; i < count; i++) placeSubMarkersFor(i);
+  }
+
+  function segmentColorFor(i) {
+    const accent = themeColor('--accent', '#fb8f67');
+    const gold = themeColor('--gold', '#d2bf55');
+    const isFlexSeg = PLACES[i].flex || PLACES[i + 1].flex;
+    return isFlexSeg ? accent : gold;
+  }
+
+  function addSegment(i) {
+    const a = PLACES[i], b = PLACES[i + 1];
+    const color = segmentColorFor(i);
+    const latlngs = [[a.lat, a.lng], [b.lat, b.lng]];
+    L.polyline(latlngs, { color, weight: 3, opacity: 0.85 }).addTo(polylineLayer);
+    if (typeof L.polylineDecorator === 'function') {
+      const seg = L.polyline(latlngs);
+      L.polylineDecorator(seg, {
+        patterns: [{
+          offset: '50%',
+          repeat: 0,
+          symbol: L.Symbol.arrowHead({
+            pixelSize: 14,
+            polygon: true,
+            pathOptions: { stroke: false, color, fillOpacity: 0.95 },
+          }),
+        }],
+      }).addTo(arrowsLayer);
+    }
+  }
+
+  function updateStepUI() {
+    document.getElementById('step-label').textContent = `${revealedCount} / ${PLACES.length}`;
+    document.getElementById('btn-prev').disabled = revealedCount <= 1;
+    document.getElementById('btn-next').disabled = revealedCount >= PLACES.length;
+  }
+
+  // Reveal stop `count` (1-based) — adds any markers/segments not yet on the
+  // map up to that point, or removes the last one if going backwards.
+  function stepTo(count) {
+    count = Math.max(1, Math.min(PLACES.length, count));
+    if (animTimer) { clearTimeout(animTimer); animTimer = null; }
+
+    while (revealedCount < count) {
+      revealedCount++;
+      placeMarkerFor(revealedCount - 1);
+      placeSubMarkersFor(revealedCount - 1);
+      if (revealedCount >= 2) addSegment(revealedCount - 2);
+    }
+    while (revealedCount > count) {
+      const place = PLACES[revealedCount - 1];
+      const marker = placeMarkers[place.id];
+      if (marker) { markersLayer.removeLayer(marker); delete placeMarkers[place.id]; }
+      revealedCount--;
+      // simplest correct way to drop the trailing segment/arrow: redraw all segments up to the new count
+      polylineLayer.clearLayers();
+      arrowsLayer.clearLayers();
+      for (let i = 0; i < revealedCount - 1; i++) addSegment(i);
+      clearSubMarkersUpTo(revealedCount);
+    }
+
+    const current = PLACES[revealedCount - 1];
+    map.panTo([current.lat, current.lng], { animate: true });
+    goToPlace(current.id, { scrollCard: true, pan: false });
+    updateStepUI();
+  }
+
+  function playRoute() {
+    if (animTimer) clearTimeout(animTimer);
+    markersLayer.clearLayers();
+    polylineLayer.clearLayers();
+    arrowsLayer.clearLayers();
+    subLinesLayer.clearLayers();
+    subMarkersLayer.clearLayers();
+    placeMarkers = {};
+    revealedCount = 0;
+    map.setView([PLACES[0].lat, PLACES[0].lng], 8);
+
+    const step = () => {
+      revealedCount++;
+      placeMarkerFor(revealedCount - 1);
+      placeSubMarkersFor(revealedCount - 1);
+      if (revealedCount >= 2) addSegment(revealedCount - 2);
+      const current = PLACES[revealedCount - 1];
+      map.panTo([current.lat, current.lng], { animate: true, duration: 0.6 });
+      updateStepUI();
+      if (revealedCount < PLACES.length) {
+        animTimer = setTimeout(step, 550);
+      } else {
+        animTimer = null;
+        const allLatLngs = PLACES.map(p => [p.lat, p.lng]);
+        setTimeout(() => map.fitBounds(allLatLngs, { padding: [40, 40] }), 400);
+      }
+    };
+    step();
+  }
+
+  function goToPlace(placeId, { scrollCard = false, pan = true } = {}) {
+    selectedPlaceId = selectedPlaceId === placeId ? null : placeId;
+    Object.entries(placeMarkers).forEach(([id, marker]) => {
+      const el = marker.getElement();
+      if (el) el.classList.toggle('selected', id === selectedPlaceId);
+    });
+    document.querySelectorAll('.place-card').forEach((card) => {
+      card.classList.toggle('selected', card.dataset.id === selectedPlaceId);
+    });
+    if (pan && selectedPlaceId && placeMarkers[selectedPlaceId]) {
+      map.panTo(placeMarkers[selectedPlaceId].getLatLng(), { animate: true });
+    }
+    if (scrollCard && selectedPlaceId) {
+      const card = document.querySelector(`.place-card[data-id="${selectedPlaceId}"]`);
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  // ---------- Checklists (localStorage, per-browser) ----------
+
+  function setupChecklists() {
+    const STORE_KEY = 'iceland-ring-road-prep-v1';
+    let state = {};
+    try { state = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch (e) { state = {}; }
+    const boxes = document.querySelectorAll('#doc-list input[type="checkbox"], #pack-list input[type="checkbox"]');
+    boxes.forEach((box) => {
+      box.checked = !!state[box.dataset.key];
+      box.closest('.checklist-item').classList.toggle('checked', box.checked);
+      box.addEventListener('change', () => {
+        state[box.dataset.key] = box.checked;
+        box.closest('.checklist-item').classList.toggle('checked', box.checked);
+        try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
+      });
+    });
+  }
+
+  renderSidebar();
+  initMap();
+  loadPhotos();
+  setupChecklists();
+</script>
+</body>
+</html>

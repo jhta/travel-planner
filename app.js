@@ -352,12 +352,15 @@ function closeShareModal() {
   render();
 }
 
-function importSharedTrip(rawTrip) {
+function importSharedTrip(rawTrip, { replaceActive = false } = {}) {
   // Always assign new IDs to avoid collisions with existing trips/places.
   const newTrip = JSON.parse(JSON.stringify(rawTrip));
   newTrip.id = newId('t');
   newTrip.places = (newTrip.places || []).map((p) => ({ ...p, id: newId('p') }));
   ensureTripFields(newTrip);
+  if (replaceActive && state.activeTripId) {
+    state.trips = state.trips.filter((t) => t.id !== state.activeTripId);
+  }
   state.trips.push(newTrip);
   state.activeTripId = newTrip.id;
   importPrompt = null;
@@ -415,6 +418,23 @@ function migratePhotosOnce() {
     t.places.forEach((p) => {
       if (p.photoUrl != null) {
         p.photoUrl = null;
+        changed = true;
+      }
+    });
+  });
+  localStorage.setItem(KEY, '1');
+  if (changed) saveState();
+}
+
+function migrateFoodImagesOnce() {
+  const KEY = 'travel-planner-food-image-migrated-v1';
+  if (localStorage.getItem(KEY)) return;
+  let changed = false;
+  state.trips.forEach((t) => {
+    if (!Array.isArray(t.foods)) return;
+    t.foods.forEach((f) => {
+      if (f.imageUrl != null) {
+        f.imageUrl = null;
         changed = true;
       }
     });
@@ -768,12 +788,33 @@ async function fetchWikidataImage(lat, lng) {
 }
 
 async function fetchWikipediaImage(title) {
+  const direct = await wikipediaSummaryThumb(title);
+  if (direct) return direct;
+  const found = await wikipediaSearchTitle(title);
+  if (!found || found.toLowerCase() === title.toLowerCase()) return null;
+  return await wikipediaSummaryThumb(found);
+}
+
+async function wikipediaSummaryThumb(title) {
   const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
     const data = await res.json();
     return data.thumbnail?.source || data.originalimage?.source || null;
+  } catch {
+    return null;
+  }
+}
+
+async function wikipediaSearchTitle(query) {
+  const cleaned = query.replace(/\s*\([^)]*\)\s*/g, ' ').trim() || query;
+  const url = `https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=1&origin=*&search=${encodeURIComponent(cleaned)}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data?.[1]) && data[1][0] ? data[1][0] : null;
   } catch {
     return null;
   }
@@ -1875,9 +1916,12 @@ function renderImportModal() {
   icon.className = 'app-modal-icon';
   icon.textContent = '📬';
 
+  const activeTrip = state.trips.find((t) => t.id === state.activeTripId);
+  const willReplace = !!activeTrip;
+
   const title = document.createElement('h2');
   title.className = 'app-modal-title';
-  title.textContent = 'Import this trip?';
+  title.textContent = willReplace ? 'Replace your current trip?' : 'Import this trip?';
 
   const tripName = document.createElement('p');
   tripName.className = 'import-trip-name';
@@ -1893,7 +1937,11 @@ function renderImportModal() {
 
   const hint = document.createElement('p');
   hint.className = 'share-hint';
-  hint.textContent = 'A copy will be added to your trips. The original sender won\'t see your changes — this is a snapshot.';
+  if (willReplace) {
+    hint.textContent = `This will replace your current trip "${activeTrip.name}". Export it first from the trip menu if you want to keep a copy.`;
+  } else {
+    hint.textContent = 'A copy will be added to your trips. The original sender won\'t see your changes — this is a snapshot.';
+  }
 
   const actions = document.createElement('div');
   actions.className = 'app-modal-actions';
@@ -1906,9 +1954,9 @@ function renderImportModal() {
 
   const importBtn = document.createElement('button');
   importBtn.type = 'button';
-  importBtn.className = 'primary';
-  importBtn.textContent = 'Import';
-  importBtn.addEventListener('click', () => importSharedTrip(incoming));
+  importBtn.className = willReplace ? 'danger' : 'primary';
+  importBtn.textContent = willReplace ? 'Replace & open' : 'Import';
+  importBtn.addEventListener('click', () => importSharedTrip(incoming, { replaceActive: willReplace }));
 
   actions.append(cancel, importBtn);
 
@@ -3686,6 +3734,7 @@ async function init() {
   initTheme();
   await loadState();
   migratePhotosOnce();
+  migrateFoodImagesOnce();
   bindGlobalEvents();
 
   const incoming = decodeTripFromHash(window.location.hash);

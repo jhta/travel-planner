@@ -1,0 +1,545 @@
+{
+  "id": "trip-egypt-2026",
+  "name": "Egypt — Pharaohs, Nile & Red Sea",
+  "startDate": "2026-06-01",
+  "endDate": "2026-06-15",
+  "notes": "15-day classic Egypt loop: Cairo → Alexandria → Luxor → Aswan → Abu Simbel → Hurghada. June is HOT (35-42°C inland). Start temple visits at sunrise, hide indoors midday, reemerge after 5pm. Carry small USD bills for tips (baksheesh) — expected for almost any service. Drink only bottled water, eat only freshly cooked food the first few days while your stomach adjusts.",
+  "flights": [
+    {
+      "id": "fl-1",
+      "from": "AMS",
+      "to": "CAI",
+      "date": "2026-06-01",
+      "carrier": "KLM",
+      "number": "KL553",
+      "depTime": "10:25",
+      "arrTime": "16:10",
+      "notes": "Direct Amsterdam → Cairo. Arrange visa on arrival ($25 USD cash) or e-visa beforehand."
+    },
+    {
+      "id": "fl-2",
+      "from": "CAI",
+      "to": "LXR",
+      "date": "2026-06-05",
+      "carrier": "EgyptAir",
+      "number": "MS063",
+      "depTime": "06:30",
+      "arrTime": "07:55",
+      "notes": "Domestic. Be at airport 90 min early — security is slow."
+    },
+    {
+      "id": "fl-3",
+      "from": "ASW",
+      "to": "HRG",
+      "date": "2026-06-11",
+      "carrier": "EgyptAir",
+      "number": "MS84",
+      "depTime": "08:45",
+      "arrTime": "11:30",
+      "notes": "One stop in Cairo."
+    },
+    {
+      "id": "fl-4",
+      "from": "HRG",
+      "to": "AMS",
+      "date": "2026-06-15",
+      "carrier": "KLM",
+      "number": "KL572",
+      "depTime": "14:20",
+      "arrTime": "19:55",
+      "notes": "Return."
+    }
+  ],
+  "documents": [
+    {
+      "id": "doc-1",
+      "name": "Passport (must be valid 6+ months past entry date)",
+      "checked": true
+    },
+    {
+      "id": "doc-2",
+      "name": "Egypt e-visa printout",
+      "checked": true
+    },
+    {
+      "id": "doc-3",
+      "name": "Travel insurance policy PDF",
+      "checked": true
+    },
+    {
+      "id": "doc-4",
+      "name": "Yellow fever certificate (only if connecting via sub-Saharan Africa)",
+      "checked": false
+    },
+    {
+      "id": "doc-5",
+      "name": "Hotel confirmations printed",
+      "checked": false
+    },
+    {
+      "id": "doc-6",
+      "name": "Driving license + IDP (for any private driver issues)",
+      "checked": false
+    }
+  ],
+  "packing": [
+    {
+      "id": "pk-1",
+      "name": "Wide-brim hat",
+      "checked": false
+    },
+    {
+      "id": "pk-2",
+      "name": "UPF long-sleeve shirts (×3)",
+      "checked": false
+    },
+    {
+      "id": "pk-3",
+      "name": "Lightweight trousers (×2)",
+      "checked": false
+    },
+    {
+      "id": "pk-4",
+      "name": "Closed-toe walking shoes (sand inside ruins)",
+      "checked": false
+    },
+    {
+      "id": "pk-5",
+      "name": "Sandals for Red Sea",
+      "checked": false
+    },
+    {
+      "id": "pk-6",
+      "name": "Reef-safe sunscreen SPF50+",
+      "checked": false
+    },
+    {
+      "id": "pk-7",
+      "name": "Sunglasses (polarized)",
+      "checked": false
+    },
+    {
+      "id": "pk-8",
+      "name": "Modest scarf (mosques + Coptic churches)",
+      "checked": false
+    },
+    {
+      "id": "pk-9",
+      "name": "Reusable water bottle (1L+)",
+      "checked": false
+    },
+    {
+      "id": "pk-10",
+      "name": "Electrolyte tablets",
+      "checked": false
+    },
+    {
+      "id": "pk-11",
+      "name": "Imodium + rehydration salts",
+      "checked": false
+    },
+    {
+      "id": "pk-12",
+      "name": "EU→EG plug adapter (Type C/F works)",
+      "checked": false
+    },
+    {
+      "id": "pk-13",
+      "name": "Power bank 20,000 mAh",
+      "checked": false
+    },
+    {
+      "id": "pk-14",
+      "name": "Snorkel + mask (Hurghada)",
+      "checked": false
+    },
+    {
+      "id": "pk-15",
+      "name": "Small USD bills for tipping",
+      "checked": false
+    },
+    {
+      "id": "pk-16",
+      "name": "Headlamp (tomb interiors)",
+      "checked": false
+    }
+  ],
+  "foods": [
+    {
+      "id": "fd-1",
+      "name": "Koshari",
+      "link": "https://en.wikipedia.org/wiki/Kushari"
+    },
+    {
+      "id": "fd-2",
+      "name": "Ful medames",
+      "link": "https://en.wikipedia.org/wiki/Ful_medames"
+    },
+    {
+      "id": "fd-3",
+      "name": "Molokhia",
+      "link": "https://en.wikipedia.org/wiki/Molokhia"
+    },
+    {
+      "id": "fd-4",
+      "name": "Hawawshi",
+      "link": "https://en.wikipedia.org/wiki/Hawawshi"
+    },
+    {
+      "id": "fd-5",
+      "name": "Mahshi",
+      "link": "https://en.wikipedia.org/wiki/Dolma"
+    },
+    {
+      "id": "fd-6",
+      "name": "Feteer meshaltet",
+      "link": "https://en.wikipedia.org/wiki/Feteer_meshaltet"
+    },
+    {
+      "id": "fd-7",
+      "name": "Umm Ali",
+      "link": "https://en.wikipedia.org/wiki/Umm_Ali"
+    },
+    {
+      "id": "fd-8",
+      "name": "Karkadeh (hibiscus tea)",
+      "link": "https://en.wikipedia.org/wiki/Hibiscus_tea"
+    }
+  ],
+  "places": [
+    {
+      "id": "pl-cairo",
+      "name": "Cairo",
+      "lat": 30.0444,
+      "lng": 31.2357,
+      "arrival": "2026-06-01",
+      "departure": "2026-06-05",
+      "notes": "Base for Giza Plateau, Egyptian Museum, Khan el-Khalili, Coptic Cairo. Use Uber/Careem — way easier than negotiating taxis. Avoid driving yourself.",
+      "lodging": {
+        "name": "Marriott Mena House (Giza)",
+        "url": "https://www.marriott.com/en-us/hotels/caimn-marriott-mena-house-cairo/overview/"
+      },
+      "activities": [
+        {
+          "id": "a-c1",
+          "text": "Pyramids of Giza + Sphinx (sunrise entry)",
+          "done": false,
+          "day": "2026-06-02",
+          "link": "https://egymonuments.gov.eg/monuments/giza-pyramids/",
+          "notes": "Buy combo ticket: plateau + Khufu interior + Solar Boat Museum. Camel rides are tourist traps — skip."
+        },
+        {
+          "id": "a-c2",
+          "text": "Grand Egyptian Museum (GEM)",
+          "done": false,
+          "day": "2026-06-02",
+          "link": "https://grandegyptianmuseum.org/",
+          "notes": "Allow 4+ hours. Tutankhamun gallery is the highlight."
+        },
+        {
+          "id": "a-c3",
+          "text": "Egyptian Museum (Tahrir)",
+          "done": false,
+          "day": "2026-06-03",
+          "notes": "Older museum on Tahrir Square — many pieces moved to GEM but mummy collection still here."
+        },
+        {
+          "id": "a-c4",
+          "text": "Khan el-Khalili bazaar + El Fishawy café",
+          "done": false,
+          "day": "2026-06-03",
+          "notes": "Best after sunset. Bargain hard — start at 30% of asking price."
+        },
+        {
+          "id": "a-c5",
+          "text": "Coptic Cairo (Hanging Church + Ben Ezra)",
+          "done": false,
+          "day": "2026-06-03"
+        },
+        {
+          "id": "a-c6",
+          "text": "Saqqara + Dahshur half-day",
+          "done": false,
+          "day": "2026-06-04",
+          "notes": "Step Pyramid of Djoser + Bent Pyramid + Red Pyramid. You can climb inside the Red Pyramid — bring a flashlight, narrow shaft."
+        }
+      ]
+    },
+    {
+      "id": "pl-alex",
+      "name": "Alexandria",
+      "lat": 31.2001,
+      "lng": 29.9187,
+      "arrival": "2026-06-04",
+      "departure": "2026-06-04",
+      "notes": "Day trip from Cairo by train (3h) or private car. Mediterranean coast — cooler than Cairo. Skip if short on time; the Greco-Roman vibe is nothing like Upper Egypt.",
+      "activities": [
+        {
+          "id": "a-a1",
+          "text": "Bibliotheca Alexandrina",
+          "done": false,
+          "link": "https://www.bibalex.org/",
+          "notes": "Modern library on the site of the ancient one."
+        },
+        {
+          "id": "a-a2",
+          "text": "Citadel of Qaitbay",
+          "done": false,
+          "notes": "Built on the ruins of the Pharos lighthouse."
+        },
+        {
+          "id": "a-a3",
+          "text": "Catacombs of Kom el Shoqafa",
+          "done": false
+        },
+        {
+          "id": "a-a4",
+          "text": "Seafood lunch at Fish Market or Kadoura",
+          "done": false
+        }
+      ],
+      "transportTo": {
+        "mode": "train",
+        "duration": "3h",
+        "notes": "Cairo Ramses → Alexandria Misr. Book first-class on Egyptian Railways site or app. Return same evening.",
+        "link": "https://enr.gov.eg/"
+      }
+    },
+    {
+      "id": "pl-luxor",
+      "name": "Luxor",
+      "lat": 25.6872,
+      "lng": 32.6396,
+      "arrival": "2026-06-05",
+      "departure": "2026-06-08",
+      "notes": "Open-air museum. Stay on the East Bank near the Corniche. West Bank is for tombs/temples (taxi or ferry across).",
+      "lodging": {
+        "name": "Hilton Luxor Resort & Spa",
+        "url": "https://www.hilton.com/en/hotels/luxhihi-hilton-luxor-resort-and-spa/"
+      },
+      "activities": [
+        {
+          "id": "a-l1",
+          "text": "Karnak Temple",
+          "done": false,
+          "day": "2026-06-05",
+          "notes": "Go right at opening (6am) — by 9am the heat is brutal and tour buses arrive. Hypostyle hall is unmissable."
+        },
+        {
+          "id": "a-l2",
+          "text": "Luxor Temple at sunset + lit at night",
+          "done": false,
+          "day": "2026-06-05"
+        },
+        {
+          "id": "a-l3",
+          "text": "Hot air balloon over West Bank",
+          "done": false,
+          "day": "2026-06-06",
+          "link": "https://www.sindbadballoons.com/",
+          "notes": "Pre-dawn pickup ~4am. Bucket-list view over Valley of the Kings."
+        },
+        {
+          "id": "a-l4",
+          "text": "Valley of the Kings (3 tombs incl. KV62 Tutankhamun extra)",
+          "done": false,
+          "day": "2026-06-06",
+          "notes": "Standard ticket = 3 tombs of your choice. Seti I and Nefertari (Valley of Queens) cost extra but worth it."
+        },
+        {
+          "id": "a-l5",
+          "text": "Hatshepsut Temple (Deir el-Bahari)",
+          "done": false,
+          "day": "2026-06-06"
+        },
+        {
+          "id": "a-l6",
+          "text": "Colossi of Memnon (quick photo stop)",
+          "done": false,
+          "day": "2026-06-06"
+        },
+        {
+          "id": "a-l7",
+          "text": "Medinet Habu (Ramesses III)",
+          "done": false,
+          "day": "2026-06-07",
+          "notes": "Less crowded than Karnak, color still preserved on reliefs."
+        },
+        {
+          "id": "a-l8",
+          "text": "Felucca sail at sunset",
+          "done": false,
+          "day": "2026-06-07"
+        }
+      ],
+      "transportTo": {
+        "mode": "flight",
+        "duration": "1h25",
+        "notes": "EgyptAir MS063 CAI→LXR. Domestic terminal Cairo T1.",
+        "link": "https://www.egyptair.com/"
+      }
+    },
+    {
+      "id": "pl-aswan",
+      "name": "Aswan",
+      "lat": 24.0889,
+      "lng": 32.8998,
+      "arrival": "2026-06-08",
+      "departure": "2026-06-11",
+      "notes": "Most relaxed of the big stops. Nubian culture, Nile islands, slower pace. Sleeper train from Luxor (4h day train, 3h drive, or Nile cruise 3-4 nights).",
+      "lodging": {
+        "name": "Sofitel Legend Old Cataract",
+        "url": "https://www.sofitel-legend-oldcataract.com/"
+      },
+      "activities": [
+        {
+          "id": "a-w1",
+          "text": "Philae Temple (boat to Agilkia Island)",
+          "done": false,
+          "day": "2026-06-09",
+          "notes": "Relocated stone-by-stone when the High Dam flooded the original island."
+        },
+        {
+          "id": "a-w2",
+          "text": "Unfinished Obelisk (granite quarries)",
+          "done": false,
+          "day": "2026-06-09"
+        },
+        {
+          "id": "a-w3",
+          "text": "Aswan High Dam viewpoint",
+          "done": false,
+          "day": "2026-06-09"
+        },
+        {
+          "id": "a-w4",
+          "text": "Nubian Village by motorboat",
+          "done": false,
+          "day": "2026-06-09",
+          "notes": "Lunch with a local family, henna, lots of color. Touristy but genuinely fun."
+        },
+        {
+          "id": "a-w5",
+          "text": "Abu Simbel (full-day or 30min flight)",
+          "done": false,
+          "day": "2026-06-10",
+          "link": "https://egymonuments.gov.eg/monuments/abu-simbel/",
+          "notes": "3h drive each way OR EgyptAir 30min flight. The flight is worth it in June heat. Try to time the visit for the bi-annual sun alignment if dates match (Feb 22 / Oct 22 only)."
+        },
+        {
+          "id": "a-w6",
+          "text": "Nubian Museum",
+          "done": false,
+          "day": "2026-06-10"
+        }
+      ],
+      "transportTo": {
+        "mode": "train",
+        "duration": "3h15",
+        "notes": "Luxor → Aswan first-class day train along the Nile. Beautiful palm-lined ride. Alternative: 3-4 night Nile cruise stopping at Edfu + Kom Ombo.",
+        "link": "https://enr.gov.eg/"
+      }
+    },
+    {
+      "id": "pl-edfu",
+      "name": "Edfu",
+      "lat": 24.9776,
+      "lng": 32.8731,
+      "arrival": "2026-06-08",
+      "departure": "2026-06-08",
+      "notes": "Quick stop on the Luxor→Aswan road. Temple of Horus is the most intact temple in Egypt.",
+      "activities": [
+        {
+          "id": "a-e1",
+          "text": "Temple of Horus",
+          "done": false,
+          "notes": "Ptolemaic-era. Roof intact, reliefs sharp. Allow 90 min."
+        }
+      ],
+      "transportTo": {
+        "mode": "car",
+        "duration": "2h",
+        "notes": "Hired driver from Luxor; continues to Aswan after the visit.",
+        "link": ""
+      }
+    },
+    {
+      "id": "pl-komombo",
+      "name": "Kom Ombo",
+      "lat": 24.4522,
+      "lng": 32.9281,
+      "arrival": "2026-06-08",
+      "departure": "2026-06-08",
+      "notes": "Double temple to Sobek (crocodile god) and Haroeris. Best at sunset on the Nile bank.",
+      "activities": [
+        {
+          "id": "a-k1",
+          "text": "Temple of Kom Ombo + Crocodile Museum",
+          "done": false,
+          "notes": "Tiny museum but the mummified crocs are striking."
+        }
+      ],
+      "transportTo": {
+        "mode": "car",
+        "duration": "1h",
+        "notes": "From Edfu, continuing to Aswan after.",
+        "link": ""
+      }
+    },
+    {
+      "id": "pl-hurghada",
+      "name": "Hurghada",
+      "lat": 27.2579,
+      "lng": 33.8116,
+      "arrival": "2026-06-11",
+      "departure": "2026-06-15",
+      "notes": "Decompress on the Red Sea after temple-overload. Coral reefs are world-class. Stay in El Gouna (cleaner, walkable) or Sahl Hasheesh (better reef access) rather than central Hurghada.",
+      "lodging": {
+        "name": "Steigenberger Pure Lifestyle (El Gouna)",
+        "url": "https://hurghada.steigenberger.com/"
+      },
+      "activities": [
+        {
+          "id": "a-h1",
+          "text": "Snorkel day at Giftun Islands",
+          "done": false,
+          "day": "2026-06-12",
+          "notes": "Full-day boat trip ~$40-60. Two snorkel stops + lunch onboard. Avoid 'orange bay' party boats."
+        },
+        {
+          "id": "a-h2",
+          "text": "Dive Abu Nuhas wrecks (advanced)",
+          "done": false,
+          "day": "2026-06-13",
+          "notes": "4 wreck dives — Carnatic, Giannis D, Chrisoula K, Kimon M. Need AOW + ~20 logged dives."
+        },
+        {
+          "id": "a-h3",
+          "text": "Desert quad / dune buggy at sunset",
+          "done": false,
+          "day": "2026-06-13",
+          "link": ""
+        },
+        {
+          "id": "a-h4",
+          "text": "El Gouna lagoon dinner crawl",
+          "done": false,
+          "day": "2026-06-14"
+        },
+        {
+          "id": "a-h5",
+          "text": "Beach + pool recovery day",
+          "done": false,
+          "day": "2026-06-14",
+          "notes": "Earned it."
+        }
+      ],
+      "transportTo": {
+        "mode": "flight",
+        "duration": "2h45 (1 stop CAI)",
+        "notes": "EgyptAir MS84 ASW→HRG via Cairo. Alternative: 5h drive across the Eastern Desert.",
+        "link": "https://www.egyptair.com/"
+      }
+    }
+  ]
+}
