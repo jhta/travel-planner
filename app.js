@@ -23,6 +23,9 @@ let foodSectionOpen = true;
 let lodgingEditPlaceId = null;
 let activityEditId = null; // { placeId, activityId } | null
 let viewMode = 'stops'; // 'stops' | 'days'
+let itineraryWho = 'shared'; // 'shared' | person id
+let addingPerson = false;
+let renamingPersonId = null;
 const expandedNotes = new Set(); // keys like "trip:t_xxx", "place:p_xxx", "activity:a_xxx"
 const photoFetches = new Set();
 let shareModalTripId = null;
@@ -123,7 +126,9 @@ function exportTripICS(trip) {
       lines.push(`DTSTAMP:${stamp}`);
       lines.push(`DTSTART;VALUE=DATE:${icsDate(dayIso)}`);
       lines.push(`DTEND;VALUE=DATE:${icsDate(icsAddDays(dayIso, 1))}`);
-      lines.push(`SUMMARY:${icsEscape(a.text || 'Activity')}`);
+      const person = tripPeople(trip).find((p) => p.id === a.who);
+      const summary = person ? `${person.name}: ${a.text || 'Activity'}` : (a.text || 'Activity');
+      lines.push(`SUMMARY:${icsEscape(summary)}`);
       lines.push(`LOCATION:${icsEscape(place.name)}`);
       if (typeof place.lat === 'number' && typeof place.lng === 'number') {
         lines.push(`GEO:${place.lat};${place.lng}`);
@@ -455,6 +460,7 @@ function ensureTripFields(trip) {
   if (!Array.isArray(trip.documents)) trip.documents = [];
   if (!Array.isArray(trip.packing)) trip.packing = [];
   if (!Array.isArray(trip.foods)) trip.foods = [];
+  if (!Array.isArray(trip.people)) trip.people = [];
   if (Array.isArray(trip.places)) {
     trip.places.forEach((p) => {
       if (!Array.isArray(p.activities)) p.activities = [];
@@ -481,6 +487,71 @@ function setActiveTrip(id) {
   gapAction = null;
   lodgingEditPlaceId = null;
   activityEditId = null;
+  itineraryWho = 'shared';
+  addingPerson = false;
+  renamingPersonId = null;
+  saveState();
+  render();
+}
+
+function tripPeople(trip) {
+  return Array.isArray(trip && trip.people) ? trip.people : [];
+}
+
+function knownWho(trip, who) {
+  return !!(who && tripPeople(trip).some((p) => p.id === who));
+}
+
+function currentItineraryWho(trip) {
+  if (itineraryWho !== 'shared' && knownWho(trip, itineraryWho)) return itineraryWho;
+  return 'shared';
+}
+
+function activityOnItinerary(trip, activity) {
+  const who = currentItineraryWho(trip);
+  const owner = knownWho(trip, activity && activity.who) ? activity.who : '';
+  if (who === 'shared') return !owner;
+  return !owner || owner === who;
+}
+
+function addPerson(name) {
+  const trip = getActiveTrip();
+  const trimmed = (name || '').trim();
+  if (!trip || !trimmed) return;
+  if (!Array.isArray(trip.people)) trip.people = [];
+  const person = { id: newId('who'), name: trimmed };
+  trip.people.push(person);
+  itineraryWho = person.id;
+  addingPerson = false;
+  renamingPersonId = null;
+  saveState();
+  render();
+}
+
+function renamePerson(id, name) {
+  const trip = getActiveTrip();
+  const person = tripPeople(trip).find((p) => p.id === id);
+  const trimmed = (name || '').trim();
+  if (!person || !trimmed) return;
+  person.name = trimmed;
+  renamingPersonId = null;
+  saveState();
+  render();
+}
+
+function removePerson(id) {
+  const trip = getActiveTrip();
+  const person = tripPeople(trip).find((p) => p.id === id);
+  if (!trip || !person) return;
+  if (!confirm(`Remove ${person.name}? Their activities become shared.`)) return;
+  trip.people = trip.people.filter((p) => p.id !== id);
+  for (const place of trip.places || []) {
+    for (const activity of place.activities || []) {
+      if (activity.who === id) delete activity.who;
+    }
+  }
+  if (itineraryWho === id) itineraryWho = 'shared';
+  renamingPersonId = null;
   saveState();
   render();
 }
@@ -608,6 +679,7 @@ function addActivity(placeId, payload) {
   if (day) activity.day = day;
   if (link) activity.link = link;
   if (data.notes && data.notes.trim()) activity.notes = data.notes.trim();
+  if (knownWho(trip, data.who)) activity.who = data.who;
 
   place.activities.push(activity);
   const focusDay = (data.focusDay || '').trim();
@@ -654,6 +726,7 @@ function updateActivity(placeId, activityId, updates) {
   if (!a.link) delete a.link;
   if (!a.day) delete a.day;
   if (!a.notes) delete a.notes;
+  if (!knownWho(trip, a.who)) delete a.who;
   activityEditId = null;
   saveState();
   render();
@@ -898,6 +971,7 @@ function renderSidebar() {
   // View toggle
   if (trip.places.length > 0) {
     root.appendChild(renderViewToggle());
+    root.appendChild(renderItineraryPeople(trip));
   }
 
   // Places list / Days view
@@ -1721,6 +1795,17 @@ function renderActivityModal() {
   if (!tripStart || !tripEnd) dayInput.disabled = true;
   dayField.append(dayLabel, dayInput);
 
+  let whoSelect = null;
+  let whoField = null;
+  if (tripPeople(trip).length) {
+    whoField = document.createElement('label');
+    whoField.className = 'activity-modal-field';
+    const whoLabel = document.createElement('span');
+    whoLabel.textContent = 'For';
+    whoSelect = renderWhoSelect(trip, activity.who || '');
+    whoField.append(whoLabel, whoSelect);
+  }
+
   // Link (optional)
   const linkField = document.createElement('label');
   linkField.className = 'activity-modal-field';
@@ -1803,10 +1888,22 @@ function renderActivityModal() {
       day,
       link,
       notes: notesInput.value.trim(),
+      who: whoSelect ? whoSelect.value : '',
     });
   });
 
-  form.append(closeBtn, iconWrap, title, textField, dayField, linkField, notesField, errorEl, actions);
+  form.append(
+    closeBtn,
+    iconWrap,
+    title,
+    textField,
+    dayField,
+    ...(whoField ? [whoField] : []),
+    linkField,
+    notesField,
+    errorEl,
+    actions
+  );
   backdrop.appendChild(form);
   return backdrop;
 }
@@ -2021,6 +2118,158 @@ function renderViewToggle() {
   return wrap;
 }
 
+function renderItineraryPeople(trip) {
+  const wrap = document.createElement('div');
+  wrap.className = 'itinerary-people';
+  const people = tripPeople(trip);
+  const active = currentItineraryWho(trip);
+
+  if (people.length) {
+    const tabs = document.createElement('div');
+    tabs.className = 'itinerary-tabs';
+    tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-label', 'Itinerary');
+    tabs.appendChild(renderItineraryTab('shared', 'Shared', active === 'shared'));
+    people.forEach((person) => {
+      tabs.appendChild(renderItineraryTab(person.id, person.name, active === person.id));
+    });
+    wrap.appendChild(tabs);
+  }
+
+  const activePerson = people.find((p) => p.id === active);
+  if (activePerson) wrap.appendChild(renderPersonActions(activePerson));
+  wrap.appendChild(renderAddPersonControl());
+  return wrap;
+}
+
+function renderItineraryTab(id, label, selected) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'itinerary-tab' + (selected ? ' active' : '');
+  btn.textContent = label;
+  btn.setAttribute('role', 'tab');
+  btn.setAttribute('aria-selected', String(selected));
+  btn.addEventListener('click', () => {
+    if (itineraryWho === id && !renamingPersonId && !addingPerson) return;
+    itineraryWho = id;
+    renamingPersonId = null;
+    addingPerson = false;
+    render();
+  });
+  return btn;
+}
+
+function renderPersonActions(person) {
+  if (renamingPersonId === person.id) {
+    const form = document.createElement('form');
+    form.className = 'itinerary-person-form';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = person.name;
+    input.dataset.renamePerson = person.id;
+    input.setAttribute('aria-label', 'Traveler name');
+    const save = document.createElement('button');
+    save.type = 'submit';
+    save.className = 'itinerary-person-save';
+    save.textContent = 'Save';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'itinerary-person-cancel';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => {
+      renamingPersonId = null;
+      render();
+    });
+    form.append(input, save, cancel);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      renamePerson(person.id, input.value);
+    });
+    focusAfterRender = `[data-rename-person="${person.id}"]`;
+    return form;
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'itinerary-person-actions';
+  const rename = document.createElement('button');
+  rename.type = 'button';
+  rename.className = 'itinerary-person-text';
+  rename.textContent = 'Rename';
+  rename.addEventListener('click', () => {
+    renamingPersonId = person.id;
+    addingPerson = false;
+    render();
+  });
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'itinerary-person-text';
+  remove.textContent = 'Remove';
+  remove.addEventListener('click', () => removePerson(person.id));
+  actions.append(rename, remove);
+  return actions;
+}
+
+function renderAddPersonControl() {
+  if (addingPerson) {
+    const form = document.createElement('form');
+    form.className = 'itinerary-person-form';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Name';
+    input.dataset.addPerson = '1';
+    input.setAttribute('aria-label', 'Traveler name');
+    const save = document.createElement('button');
+    save.type = 'submit';
+    save.className = 'itinerary-person-save';
+    save.textContent = 'Add';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'itinerary-person-cancel';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => {
+      addingPerson = false;
+      render();
+    });
+    form.append(input, save, cancel);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!input.value.trim()) return;
+      addPerson(input.value);
+    });
+    focusAfterRender = '[data-add-person]';
+    return form;
+  }
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'itinerary-add';
+  btn.textContent = '+ Traveler';
+  btn.addEventListener('click', () => {
+    addingPerson = true;
+    renamingPersonId = null;
+    render();
+  });
+  return btn;
+}
+
+function renderWhoSelect(trip, value) {
+  const select = document.createElement('select');
+  select.className = 'activity-who-select';
+  select.setAttribute('aria-label', 'Who this activity is for');
+  const shared = document.createElement('option');
+  shared.value = '';
+  shared.textContent = 'Shared';
+  select.appendChild(shared);
+  tripPeople(trip).forEach((person) => {
+    const opt = document.createElement('option');
+    opt.value = person.id;
+    opt.textContent = person.name;
+    select.appendChild(opt);
+  });
+  select.value = knownWho(trip, value) ? value : '';
+  return select;
+}
+
 function dayNumberOf(trip, isoDate) {
   if (!trip.startDate || !isoDate) return null;
   const start = new Date(trip.startDate);
@@ -2103,8 +2352,10 @@ function itineraryBounds(trip) {
   return { start, end };
 }
 
-function activitiesOnDate(place, iso) {
-  return (place.activities || []).filter((a) => a.day === iso);
+function activitiesOnDate(trip, place, iso) {
+  return (place.activities || []).filter(
+    (a) => a.day === iso && activityOnItinerary(trip, a)
+  );
 }
 
 const DAY_ROLE_ORDER = { stay: 0, depart: 1, arrive: 2, single: 3, planned: 4 };
@@ -2113,7 +2364,7 @@ function stopsForDay(trip, iso) {
   const stops = [];
   trip.places.forEach((place, index) => {
     const role = placeRoleOnDate(place, iso);
-    const activities = activitiesOnDate(place, iso);
+    const activities = activitiesOnDate(trip, place, iso);
     if (role) stops.push({ place, index, role, activities });
     else if (activities.length) stops.push({ place, index, role: 'planned', activities });
   });
@@ -2316,7 +2567,9 @@ function renderDayStop(trip, iso, stop, stops) {
   }
 
   if (role === 'arrive' || role === 'single') {
-    const anytime = (place.activities || []).filter((a) => !a.day);
+    const anytime = (place.activities || []).filter(
+      (a) => !a.day && activityOnItinerary(trip, a)
+    );
     if (anytime.length) {
       if (role === 'arrive' || activities.length) {
         const anytimeLabel = document.createElement('span');
@@ -2468,8 +2721,15 @@ function renderDayTransport(transport) {
   return wrap;
 }
 
-function renderActivityPill(place) {
+function visibleActivities(place) {
+  const trip = getActiveTrip();
   const activities = Array.isArray(place.activities) ? place.activities : [];
+  if (!trip || !tripPeople(trip).length) return activities;
+  return activities.filter((a) => activityOnItinerary(trip, a));
+}
+
+function renderActivityPill(place) {
+  const activities = visibleActivities(place);
   const total = activities.length;
   const done = activities.filter((a) => a.done).length;
   const isExpanded = expandedPlaceId === place.id && editingPlaceId !== place.id;
@@ -2517,7 +2777,8 @@ function renderActivityPill(place) {
 }
 
 function renderActivities(place) {
-  const activities = Array.isArray(place.activities) ? place.activities : [];
+  const trip = getActiveTrip();
+  const activities = visibleActivities(place);
   const wrap = document.createElement('div');
   wrap.className = 'activities';
 
@@ -2536,7 +2797,12 @@ function renderActivities(place) {
   if (activities.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'activities-empty';
-    empty.textContent = 'Nothing planned yet — add your first one below.';
+    const people = tripPeople(trip);
+    const who = trip ? currentItineraryWho(trip) : 'shared';
+    const person = people.find((p) => p.id === who);
+    if (person) empty.textContent = `Nothing on ${person.name}'s plan for this stop yet.`;
+    else if (people.length) empty.textContent = 'Nothing shared at this stop yet.';
+    else empty.textContent = 'Nothing planned yet — add your first one below.';
     wrap.appendChild(empty);
   } else {
     const list = document.createElement('ul');
@@ -2550,7 +2816,7 @@ function renderActivities(place) {
   return wrap;
 }
 
-function renderActivityAddForm(place, { defaultDay = '', lockDay = false } = {}) {
+function renderActivityAddForm(place, { defaultDay = '', lockDay = false, defaultWho } = {}) {
   const trip = getActiveTrip();
   const tripStart = (trip && trip.startDate) || '';
   const tripEnd = (trip && trip.endDate) || '';
@@ -2607,12 +2873,27 @@ function renderActivityAddForm(place, { defaultDay = '', lockDay = false } = {})
   extras.append(dayWrap, linkWrap);
   if (lockDay) extras.hidden = true;
 
+  const people = tripPeople(trip);
+  const whoDefault = defaultWho !== undefined
+    ? defaultWho
+    : (trip && currentItineraryWho(trip) !== 'shared' ? currentItineraryWho(trip) : '');
+  let whoSelect = null;
+  let whoRow = null;
+  if (people.length) {
+    whoRow = document.createElement('label');
+    whoRow.className = 'activity-who-row';
+    const whoLabel = document.createElement('span');
+    whoLabel.textContent = 'For';
+    whoSelect = renderWhoSelect(trip, whoDefault);
+    whoRow.append(whoLabel, whoSelect);
+  }
+
   const error = document.createElement('p');
   error.className = 'activity-add-error';
   error.hidden = true;
   error.setAttribute('role', 'alert');
 
-  form.append(main, extras, error);
+  form.append(main, ...(whoRow ? [whoRow] : []), extras, error);
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -2620,6 +2901,7 @@ function renderActivityAddForm(place, { defaultDay = '', lockDay = false } = {})
       text: textInput.value,
       day: dayInput.value,
       link: linkInput.value,
+      who: whoSelect ? whoSelect.value : '',
       focusDay: lockDay ? defaultDay : '',
     });
     if (result && !result.ok) {
@@ -2668,6 +2950,12 @@ function renderActivityItem(place, activity, { hideDay = false } = {}) {
 
   const tags = document.createElement('span');
   tags.className = 'activity-tags';
+  if (trip && tripPeople(trip).length && currentItineraryWho(trip) !== 'shared' && !knownWho(trip, activity.who)) {
+    const sharedPill = document.createElement('span');
+    sharedPill.className = 'activity-who-pill';
+    sharedPill.textContent = 'Shared';
+    tags.appendChild(sharedPill);
+  }
   if (activity.day && trip && !hideDay) {
     const dayNum = dayNumberOf(trip, activity.day);
     const dayPill = document.createElement('span');

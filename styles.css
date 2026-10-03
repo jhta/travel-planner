@@ -364,6 +364,139 @@ textarea { resize: vertical; font-family: inherit; }
   color: var(--accent-fg);
 }
 
+/* ---------- Itinerary people tabs ---------- */
+
+.itinerary-people {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.itinerary-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.itinerary-tab,
+.itinerary-add,
+.itinerary-person-text,
+.itinerary-person-save,
+.itinerary-person-cancel {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.itinerary-tab,
+.itinerary-add {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.itinerary-tab:hover,
+.itinerary-add:hover { color: var(--fg); border-color: var(--fg-muted); }
+
+.itinerary-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.itinerary-add {
+  border-style: dashed;
+  color: var(--accent);
+  background: transparent;
+}
+
+.itinerary-person-actions,
+.itinerary-person-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.itinerary-person-text,
+.itinerary-person-cancel {
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.itinerary-person-text:hover,
+.itinerary-person-cancel:hover { color: var(--fg); }
+
+.itinerary-person-form input {
+  width: 140px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--fg);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.itinerary-person-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.itinerary-person-save {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.activity-who-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.activity-who-select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--fg);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.activity-modal-field .activity-who-select { width: 100%; }
+
+.activity-who-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 /* ---------- Places list ---------- */
 
 .places-list {
