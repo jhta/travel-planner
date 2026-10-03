@@ -24,6 +24,7 @@ let lodgingEditPlaceId = null;
 let activityEditId = null; // { placeId, activityId } | null
 let viewMode = 'stops'; // 'stops' | 'days'
 const expandedNotes = new Set(); // keys like "trip:t_xxx", "place:p_xxx", "activity:a_xxx"
+const photoFetches = new Set();
 let shareModalTripId = null;
 let importPrompt = null; // decoded incoming trip from URL hash
 let focusAfterRender = null;
@@ -251,10 +252,13 @@ function importFromFile() {
       );
 
       const added = [];
+      const idMap = new Map();
       for (const raw of incoming) {
         if (!raw || !Array.isArray(raw.places)) continue;
         const trip = { ...raw };
+        const previousId = trip.id;
         if (!trip.id || tripIds.has(trip.id)) trip.id = newId('t');
+        if (previousId) idMap.set(previousId, trip.id);
         tripIds.add(trip.id);
         trip.places = trip.places.map((p) => {
           const copy = { ...p };
@@ -272,7 +276,8 @@ function importFromFile() {
         return;
       }
 
-      state.activeTripId = added[0].id;
+      const preferred = parsed.activeTripId && idMap.get(parsed.activeTripId);
+      state.activeTripId = preferred || added[0].id;
       selectedPlaceId = null;
       expandedPlaceId = null;
       gapAction = null;
@@ -605,7 +610,10 @@ function addActivity(placeId, payload) {
   if (data.notes && data.notes.trim()) activity.notes = data.notes.trim();
 
   place.activities.push(activity);
-  focusAfterRender = `[data-add-activity="${placeId}"]`;
+  const focusDay = (data.focusDay || '').trim();
+  focusAfterRender = focusDay
+    ? `[data-add-activity="${placeId}"][data-add-day="${focusDay}"]`
+    : `[data-add-activity="${placeId}"]`;
   saveState();
   render();
   return { ok: true };
@@ -901,9 +909,7 @@ function renderSidebar() {
     empty.textContent = 'No places yet. Search above to add one.';
     list.appendChild(empty);
   } else if (viewMode === 'days') {
-    trip.places.forEach((place, i) => {
-      list.appendChild(renderDaySegment(trip, place, i));
-    });
+    list.appendChild(renderDaysCalendar(trip));
   } else {
     trip.places.forEach((place, i) => {
       list.appendChild(renderPlaceCard(place, i));
@@ -1433,7 +1439,33 @@ function renderLodgingSlot(place) {
   if (place.lodging && place.lodging.url) {
     return renderLodgingFilled(place);
   }
+  if (place.lodging && (place.lodging.name || '').trim()) {
+    return renderLodgingNamed(place);
+  }
   return renderLodgingEmpty(place);
+}
+
+function renderLodgingNamed(place) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'place-lodging filled';
+  btn.setAttribute('aria-label', `Edit hotel for ${place.name}`);
+  const icon = document.createElement('span');
+  icon.className = 'lodging-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '🏨';
+  const text = document.createElement('span');
+  text.className = 'lodging-text';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'lodging-name';
+  nameEl.textContent = place.lodging.name.trim();
+  text.appendChild(nameEl);
+  btn.append(icon, text);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openLodgingModal(place.id);
+  });
+  return btn;
 }
 
 function renderLodgingEmpty(place) {
@@ -2019,6 +2051,309 @@ function formatDayDateRange(start, end) {
   return a || b || '';
 }
 
+function eachIsoDate(start, end, limit = 120) {
+  const days = [];
+  if (!start || !end || end < start) return { days, truncated: false };
+  let cursor = start;
+  let truncated = false;
+  while (cursor <= end) {
+    if (days.length >= limit) {
+      truncated = true;
+      break;
+    }
+    days.push(cursor);
+    cursor = icsAddDays(cursor, 1);
+  }
+  return { days, truncated };
+}
+
+function placeSpan(place) {
+  const start = place.arrival || place.departure || '';
+  const end = place.departure || place.arrival || '';
+  if (!start || !end || end < start) return null;
+  return { start, end };
+}
+
+function placeRoleOnDate(place, iso) {
+  const span = placeSpan(place);
+  if (!span || iso < span.start || iso > span.end) return null;
+  if (span.start === span.end) return 'single';
+  if (iso === span.start) return 'arrive';
+  if (iso === span.end) return 'depart';
+  return 'stay';
+}
+
+function itineraryBounds(trip) {
+  let start = trip.startDate || '';
+  let end = trip.endDate || '';
+  if (start && end && end >= start) return { start, end };
+  const dates = [];
+  for (const place of trip.places) {
+    const span = placeSpan(place);
+    if (span) dates.push(span.start, span.end);
+    for (const activity of place.activities || []) {
+      if (activity.day) dates.push(activity.day);
+    }
+  }
+  if (!start) start = dates.reduce((min, d) => (!min || d < min ? d : min), '');
+  if (!end) end = dates.reduce((max, d) => (!max || d > max ? d : max), '');
+  if (start && !end) end = start;
+  if (end && !start) start = end;
+  if (!start || !end || end < start) return { start: '', end: '' };
+  return { start, end };
+}
+
+function activitiesOnDate(place, iso) {
+  return (place.activities || []).filter((a) => a.day === iso);
+}
+
+const DAY_ROLE_ORDER = { stay: 0, depart: 1, arrive: 2, single: 3, planned: 4 };
+
+function stopsForDay(trip, iso) {
+  const stops = [];
+  trip.places.forEach((place, index) => {
+    const role = placeRoleOnDate(place, iso);
+    const activities = activitiesOnDate(place, iso);
+    if (role) stops.push({ place, index, role, activities });
+    else if (activities.length) stops.push({ place, index, role: 'planned', activities });
+  });
+  stops.sort((a, b) => DAY_ROLE_ORDER[a.role] - DAY_ROLE_ORDER[b.role] || a.index - b.index);
+  return stops;
+}
+
+function formatCalendarDate(iso) {
+  const d = new Date(`${iso}T00:00:00`);
+  if (isNaN(d.getTime())) return { weekday: '', dayNum: '', month: '', full: iso };
+  return {
+    weekday: d.toLocaleDateString(undefined, { weekday: 'short' }),
+    dayNum: String(d.getDate()),
+    month: d.toLocaleDateString(undefined, { month: 'short' }),
+    full: d.toLocaleDateString(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    }),
+  };
+}
+
+function todayIso() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function dayRoleLabel(role, stops) {
+  if (role === 'arrive') return 'Arrive';
+  if (role === 'depart') return 'Depart';
+  if (role === 'planned') return 'Also planned';
+  if (role === 'single') {
+    const basedElsewhere = stops.some(
+      (s) => s.role === 'stay' || s.role === 'depart' || s.role === 'arrive'
+    );
+    return basedElsewhere ? 'Day trip' : '';
+  }
+  return '';
+}
+
+function renderDaysCalendar(trip) {
+  const frag = document.createDocumentFragment();
+  const { start, end } = itineraryBounds(trip);
+  if (!start || !end) {
+    trip.places.forEach((place, i) => frag.appendChild(renderDaySegment(trip, place, i)));
+    return frag;
+  }
+
+  const { days, truncated } = eachIsoDate(start, end);
+  if (truncated) {
+    const note = document.createElement('p');
+    note.className = 'day-calendar-note';
+    note.textContent = `Showing the first ${days.length} days of this trip.`;
+    frag.appendChild(note);
+  }
+
+  days.forEach((iso) => frag.appendChild(renderDayCard(trip, iso)));
+
+  const offCalendar = trip.places.filter((place) => {
+    const span = placeSpan(place);
+    if (!span) return true;
+    return span.end < start || span.start > end;
+  });
+  if (offCalendar.length) {
+    const section = document.createElement('section');
+    section.className = 'day-off-calendar';
+    const heading = document.createElement('h3');
+    heading.className = 'day-off-calendar-title';
+    heading.textContent = 'Not on the calendar';
+    const hint = document.createElement('p');
+    hint.className = 'day-off-calendar-hint';
+    hint.textContent = 'These stops have no dates, or their dates fall outside the trip.';
+    section.append(heading, hint);
+    offCalendar.forEach((place) => {
+      section.appendChild(renderDaySegment(trip, place, trip.places.indexOf(place)));
+    });
+    frag.appendChild(section);
+  }
+  return frag;
+}
+
+function renderDayCard(trip, iso) {
+  const card = document.createElement('article');
+  card.className = 'day-card';
+  card.dataset.date = iso;
+  if (iso === todayIso()) card.classList.add('today');
+
+  const date = formatCalendarDate(iso);
+  const rail = document.createElement('div');
+  rail.className = 'day-card-rail';
+  const dateCol = document.createElement('div');
+  dateCol.className = 'day-card-date';
+  dateCol.title = date.full;
+  const weekday = document.createElement('span');
+  weekday.className = 'day-card-weekday';
+  weekday.textContent = date.weekday;
+  const num = document.createElement('span');
+  num.className = 'day-card-num';
+  num.textContent = date.dayNum;
+  const month = document.createElement('span');
+  month.className = 'day-card-month';
+  month.textContent = date.month;
+  dateCol.append(weekday, num, month);
+  const line = document.createElement('span');
+  line.className = 'day-card-line';
+  line.setAttribute('aria-hidden', 'true');
+  rail.append(dateCol, line);
+
+  const panel = document.createElement('div');
+  panel.className = 'day-card-panel';
+
+  const dayNum = dayNumberOf(trip, iso);
+  if (dayNum) {
+    const kicker = document.createElement('div');
+    kicker.className = 'day-card-kicker';
+    const pill = document.createElement('span');
+    pill.className = 'day-pill';
+    pill.textContent = `Day ${dayNum}`;
+    kicker.appendChild(pill);
+    panel.appendChild(kicker);
+  }
+
+  const stops = stopsForDay(trip, iso);
+  if (stops.length === 0) {
+    card.classList.add('is-open');
+    const open = document.createElement('p');
+    open.className = 'day-open';
+    open.textContent = 'Open day';
+    panel.appendChild(open);
+  } else {
+    stops.forEach((stop) => panel.appendChild(renderDayStop(trip, iso, stop, stops)));
+  }
+
+  card.append(rail, panel);
+  return card;
+}
+
+function renderDayStop(trip, iso, stop, stops) {
+  const { place, index, role, activities } = stop;
+  const wrap = document.createElement('section');
+  wrap.className = 'day-stop';
+  if (selectedPlaceId === place.id) wrap.classList.add('selected');
+  wrap.dataset.placeId = place.id;
+
+  const head = document.createElement('div');
+  head.className = 'day-stop-head';
+  head.addEventListener('click', (e) => {
+    if (e.target.closest('a, button, input, textarea')) return;
+    selectPlace(place.id);
+  });
+
+  const thumb = document.createElement('div');
+  thumb.className = 'thumb day-stop-thumb';
+  applyPhoto(thumb, place);
+
+  const titles = document.createElement('div');
+  titles.className = 'day-stop-titles';
+  const label = dayRoleLabel(role, stops);
+  if (label) {
+    const roleEl = document.createElement('span');
+    roleEl.className = 'day-stop-role';
+    roleEl.textContent = label;
+    titles.appendChild(roleEl);
+  }
+  const name = document.createElement('h3');
+  name.className = 'day-stop-name';
+  name.textContent = place.name;
+  titles.appendChild(name);
+  head.append(thumb, titles);
+  wrap.appendChild(head);
+
+  if ((role === 'arrive' || role === 'single') && index > 0 && place.transportTo) {
+    wrap.appendChild(renderDayTransport(place.transportTo));
+  }
+
+  const hasLodging = !!(
+    place.lodging && (place.lodging.url || (place.lodging.name || '').trim())
+  );
+  const dayTrip = role === 'single' && dayRoleLabel(role, stops) === 'Day trip';
+  if (role === 'depart') {
+    if (hasLodging) wrap.appendChild(renderDayCheckout(place));
+  } else if (role !== 'planned' && (hasLodging || role === 'arrive' || (role === 'single' && !dayTrip))) {
+    wrap.appendChild(renderLodgingSlot(place));
+  }
+
+  if (role === 'arrive' || role === 'single') {
+    const notesEl = renderNotes(place.notes, `place:${place.id}`);
+    if (notesEl) {
+      notesEl.classList.add('place-notes');
+      wrap.appendChild(notesEl);
+    }
+  }
+
+  if (activities.length) {
+    wrap.appendChild(renderDayActivityList(place, activities));
+  }
+
+  if (role === 'arrive' || role === 'single') {
+    const anytime = (place.activities || []).filter((a) => !a.day);
+    if (anytime.length) {
+      if (role === 'arrive' || activities.length) {
+        const anytimeLabel = document.createElement('span');
+        anytimeLabel.className = 'day-anytime';
+        anytimeLabel.textContent = 'Anytime during this stay';
+        wrap.appendChild(anytimeLabel);
+      }
+      wrap.appendChild(renderDayActivityList(place, anytime));
+    }
+  }
+
+  const datesUsable = !!(trip.startDate && trip.endDate);
+  wrap.appendChild(
+    renderActivityAddForm(place, datesUsable ? { defaultDay: iso, lockDay: true } : {})
+  );
+  return wrap;
+}
+
+function renderDayActivityList(place, activities) {
+  const list = document.createElement('ul');
+  list.className = 'activity-list day-activity-list';
+  activities.forEach((activity) => {
+    list.appendChild(renderActivityItem(place, activity, { hideDay: true }));
+  });
+  return list;
+}
+
+function renderDayCheckout(place) {
+  let host = '';
+  try { host = new URL(place.lodging.url).hostname.replace(/^www\./, ''); } catch {}
+  const name = place.lodging.name || host || 'your hotel';
+  const line = document.createElement('p');
+  line.className = 'day-checkout';
+  line.textContent = `Check out of ${name}`;
+  return line;
+}
+
 function renderDaySegment(trip, place, idx) {
   const card = document.createElement('article');
   card.className = 'day-segment';
@@ -2109,6 +2444,12 @@ function renderDayTransport(transport) {
   const detail = document.createElement('strong');
   detail.textContent = meta.label + (transport.duration ? ` · ${transport.duration}` : '');
   text.append(lead, detail);
+  if (transport.notes) {
+    const notes = document.createElement('span');
+    notes.className = 'day-transport-notes';
+    notes.textContent = transport.notes;
+    text.appendChild(notes);
+  }
 
   wrap.append(icon, text);
 
@@ -2209,7 +2550,7 @@ function renderActivities(place) {
   return wrap;
 }
 
-function renderActivityAddForm(place) {
+function renderActivityAddForm(place, { defaultDay = '', lockDay = false } = {}) {
   const trip = getActiveTrip();
   const tripStart = (trip && trip.startDate) || '';
   const tripEnd = (trip && trip.endDate) || '';
@@ -2217,6 +2558,7 @@ function renderActivityAddForm(place) {
 
   const form = document.createElement('form');
   form.className = 'activity-add';
+  if (lockDay) form.classList.add('day-locked');
 
   const main = document.createElement('div');
   main.className = 'activity-add-main';
@@ -2224,6 +2566,7 @@ function renderActivityAddForm(place) {
   textInput.type = 'text';
   textInput.placeholder = 'Add an activity…';
   textInput.dataset.addActivity = place.id;
+  if (lockDay && defaultDay) textInput.dataset.addDay = defaultDay;
   textInput.autocomplete = 'off';
   const submit = document.createElement('button');
   submit.type = 'submit';
@@ -2243,10 +2586,12 @@ function renderActivityAddForm(place) {
   dayInput.type = 'date';
   dayInput.title = datesUsable ? 'Day (optional)' : 'Set trip dates first';
   dayInput.disabled = !datesUsable;
+  if (defaultDay) dayInput.value = defaultDay;
   if (tripStart) dayInput.min = tripStart;
   if (tripEnd) dayInput.max = tripEnd;
   dayWrap.append(dayIcon, dayInput);
   if (!datesUsable) dayWrap.classList.add('disabled');
+  if (lockDay) dayWrap.hidden = true;
 
   const linkWrap = document.createElement('label');
   linkWrap.className = 'activity-add-extra';
@@ -2260,6 +2605,7 @@ function renderActivityAddForm(place) {
   linkWrap.append(linkIcon, linkInput);
 
   extras.append(dayWrap, linkWrap);
+  if (lockDay) extras.hidden = true;
 
   const error = document.createElement('p');
   error.className = 'activity-add-error';
@@ -2274,6 +2620,7 @@ function renderActivityAddForm(place) {
       text: textInput.value,
       day: dayInput.value,
       link: linkInput.value,
+      focusDay: lockDay ? defaultDay : '',
     });
     if (result && !result.ok) {
       error.textContent = result.error;
@@ -2296,7 +2643,7 @@ function renderActivityAddForm(place) {
   return form;
 }
 
-function renderActivityItem(place, activity) {
+function renderActivityItem(place, activity, { hideDay = false } = {}) {
   const trip = getActiveTrip();
   const li = document.createElement('li');
   li.className = 'activity-item';
@@ -2321,7 +2668,7 @@ function renderActivityItem(place, activity) {
 
   const tags = document.createElement('span');
   tags.className = 'activity-tags';
-  if (activity.day && trip) {
+  if (activity.day && trip && !hideDay) {
     const dayNum = dayNumberOf(trip, activity.day);
     const dayPill = document.createElement('span');
     dayPill.className = 'activity-day-pill';
@@ -2891,14 +3238,18 @@ function applyPhoto(thumb, place) {
   }
   if (place.photoUrl === '') return;
   thumb.classList.add('loading');
+  if (photoFetches.has(place.id)) return;
+  photoFetches.add(place.id);
   fetchPhoto(place).then((url) => {
+    photoFetches.delete(place.id);
     if (!placeStillExists(place.id)) return;
     place.photoUrl = url || '';
     saveState();
-    const stillThumb = document.querySelector(
-      `[data-place-id="${place.id}"] .thumb`
-    );
-    if (stillThumb) applyPhoto(stillThumb, place);
+    document.querySelectorAll(`[data-place-id="${place.id}"] .thumb`).forEach((el) => {
+      applyPhoto(el, place);
+    });
+  }).catch(() => {
+    photoFetches.delete(place.id);
   });
 }
 
@@ -3156,7 +3507,7 @@ function selectPlace(placeId, { scrollCard = false } = {}) {
     const el = marker.getElement();
     if (el) el.classList.toggle('selected', id === selectedPlaceId);
   });
-  document.querySelectorAll('.place-card').forEach((card) => {
+  document.querySelectorAll('.place-card, .day-stop').forEach((card) => {
     card.classList.toggle('selected', card.dataset.placeId === selectedPlaceId);
   });
 
@@ -3170,7 +3521,7 @@ function selectPlace(placeId, { scrollCard = false } = {}) {
     }
     if (scrollCard) {
       const card = document.querySelector(
-        `.place-card[data-place-id="${selectedPlaceId}"]`
+        `.place-card[data-place-id="${selectedPlaceId}"], .day-stop[data-place-id="${selectedPlaceId}"]`
       );
       if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }

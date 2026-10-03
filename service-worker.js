@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'tp-shell-v1';
+const CACHE_NAME = 'tp-shell-v2';
 const SHELL = [
   './',
   './index.html',
