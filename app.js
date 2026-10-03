@@ -23,7 +23,11 @@ let foodSectionOpen = true;
 let lodgingEditPlaceId = null;
 let activityEditId = null; // { placeId, activityId } | null
 let viewMode = 'stops'; // 'stops' | 'days'
+let itineraryWho = 'shared'; // 'shared' | person id
+let addingPerson = false;
+let renamingPersonId = null;
 const expandedNotes = new Set(); // keys like "trip:t_xxx", "place:p_xxx", "activity:a_xxx"
+const photoFetches = new Set();
 let shareModalTripId = null;
 let importPrompt = null; // decoded incoming trip from URL hash
 let focusAfterRender = null;
@@ -122,7 +126,9 @@ function exportTripICS(trip) {
       lines.push(`DTSTAMP:${stamp}`);
       lines.push(`DTSTART;VALUE=DATE:${icsDate(dayIso)}`);
       lines.push(`DTEND;VALUE=DATE:${icsDate(icsAddDays(dayIso, 1))}`);
-      lines.push(`SUMMARY:${icsEscape(a.text || 'Activity')}`);
+      const person = tripPeople(trip).find((p) => p.id === a.who);
+      const summary = person ? `${person.name}: ${a.text || 'Activity'}` : (a.text || 'Activity');
+      lines.push(`SUMMARY:${icsEscape(summary)}`);
       lines.push(`LOCATION:${icsEscape(place.name)}`);
       if (typeof place.lat === 'number' && typeof place.lng === 'number') {
         lines.push(`GEO:${place.lat};${place.lng}`);
@@ -251,10 +257,13 @@ function importFromFile() {
       );
 
       const added = [];
+      const idMap = new Map();
       for (const raw of incoming) {
         if (!raw || !Array.isArray(raw.places)) continue;
         const trip = { ...raw };
+        const previousId = trip.id;
         if (!trip.id || tripIds.has(trip.id)) trip.id = newId('t');
+        if (previousId) idMap.set(previousId, trip.id);
         tripIds.add(trip.id);
         trip.places = trip.places.map((p) => {
           const copy = { ...p };
@@ -272,7 +281,8 @@ function importFromFile() {
         return;
       }
 
-      state.activeTripId = added[0].id;
+      const preferred = parsed.activeTripId && idMap.get(parsed.activeTripId);
+      state.activeTripId = preferred || added[0].id;
       selectedPlaceId = null;
       expandedPlaceId = null;
       gapAction = null;
@@ -450,6 +460,7 @@ function ensureTripFields(trip) {
   if (!Array.isArray(trip.documents)) trip.documents = [];
   if (!Array.isArray(trip.packing)) trip.packing = [];
   if (!Array.isArray(trip.foods)) trip.foods = [];
+  if (!Array.isArray(trip.people)) trip.people = [];
   if (Array.isArray(trip.places)) {
     trip.places.forEach((p) => {
       if (!Array.isArray(p.activities)) p.activities = [];
@@ -476,6 +487,71 @@ function setActiveTrip(id) {
   gapAction = null;
   lodgingEditPlaceId = null;
   activityEditId = null;
+  itineraryWho = 'shared';
+  addingPerson = false;
+  renamingPersonId = null;
+  saveState();
+  render();
+}
+
+function tripPeople(trip) {
+  return Array.isArray(trip && trip.people) ? trip.people : [];
+}
+
+function knownWho(trip, who) {
+  return !!(who && tripPeople(trip).some((p) => p.id === who));
+}
+
+function currentItineraryWho(trip) {
+  if (itineraryWho !== 'shared' && knownWho(trip, itineraryWho)) return itineraryWho;
+  return 'shared';
+}
+
+function activityOnItinerary(trip, activity) {
+  const who = currentItineraryWho(trip);
+  const owner = knownWho(trip, activity && activity.who) ? activity.who : '';
+  if (who === 'shared') return !owner;
+  return !owner || owner === who;
+}
+
+function addPerson(name) {
+  const trip = getActiveTrip();
+  const trimmed = (name || '').trim();
+  if (!trip || !trimmed) return;
+  if (!Array.isArray(trip.people)) trip.people = [];
+  const person = { id: newId('who'), name: trimmed };
+  trip.people.push(person);
+  itineraryWho = person.id;
+  addingPerson = false;
+  renamingPersonId = null;
+  saveState();
+  render();
+}
+
+function renamePerson(id, name) {
+  const trip = getActiveTrip();
+  const person = tripPeople(trip).find((p) => p.id === id);
+  const trimmed = (name || '').trim();
+  if (!person || !trimmed) return;
+  person.name = trimmed;
+  renamingPersonId = null;
+  saveState();
+  render();
+}
+
+function removePerson(id) {
+  const trip = getActiveTrip();
+  const person = tripPeople(trip).find((p) => p.id === id);
+  if (!trip || !person) return;
+  if (!confirm(`Remove ${person.name}? Their activities become shared.`)) return;
+  trip.people = trip.people.filter((p) => p.id !== id);
+  for (const place of trip.places || []) {
+    for (const activity of place.activities || []) {
+      if (activity.who === id) delete activity.who;
+    }
+  }
+  if (itineraryWho === id) itineraryWho = 'shared';
+  renamingPersonId = null;
   saveState();
   render();
 }
@@ -603,9 +679,13 @@ function addActivity(placeId, payload) {
   if (day) activity.day = day;
   if (link) activity.link = link;
   if (data.notes && data.notes.trim()) activity.notes = data.notes.trim();
+  if (knownWho(trip, data.who)) activity.who = data.who;
 
   place.activities.push(activity);
-  focusAfterRender = `[data-add-activity="${placeId}"]`;
+  const focusDay = (data.focusDay || '').trim();
+  focusAfterRender = focusDay
+    ? `[data-add-activity="${placeId}"][data-add-day="${focusDay}"]`
+    : `[data-add-activity="${placeId}"]`;
   saveState();
   render();
   return { ok: true };
@@ -646,6 +726,7 @@ function updateActivity(placeId, activityId, updates) {
   if (!a.link) delete a.link;
   if (!a.day) delete a.day;
   if (!a.notes) delete a.notes;
+  if (!knownWho(trip, a.who)) delete a.who;
   activityEditId = null;
   saveState();
   render();
@@ -890,6 +971,7 @@ function renderSidebar() {
   // View toggle
   if (trip.places.length > 0) {
     root.appendChild(renderViewToggle());
+    root.appendChild(renderItineraryPeople(trip));
   }
 
   // Places list / Days view
@@ -901,9 +983,7 @@ function renderSidebar() {
     empty.textContent = 'No places yet. Search above to add one.';
     list.appendChild(empty);
   } else if (viewMode === 'days') {
-    trip.places.forEach((place, i) => {
-      list.appendChild(renderDaySegment(trip, place, i));
-    });
+    list.appendChild(renderDaysCalendar(trip));
   } else {
     trip.places.forEach((place, i) => {
       list.appendChild(renderPlaceCard(place, i));
@@ -1433,7 +1513,33 @@ function renderLodgingSlot(place) {
   if (place.lodging && place.lodging.url) {
     return renderLodgingFilled(place);
   }
+  if (place.lodging && (place.lodging.name || '').trim()) {
+    return renderLodgingNamed(place);
+  }
   return renderLodgingEmpty(place);
+}
+
+function renderLodgingNamed(place) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'place-lodging filled';
+  btn.setAttribute('aria-label', `Edit hotel for ${place.name}`);
+  const icon = document.createElement('span');
+  icon.className = 'lodging-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '🏨';
+  const text = document.createElement('span');
+  text.className = 'lodging-text';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'lodging-name';
+  nameEl.textContent = place.lodging.name.trim();
+  text.appendChild(nameEl);
+  btn.append(icon, text);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openLodgingModal(place.id);
+  });
+  return btn;
 }
 
 function renderLodgingEmpty(place) {
@@ -1689,6 +1795,17 @@ function renderActivityModal() {
   if (!tripStart || !tripEnd) dayInput.disabled = true;
   dayField.append(dayLabel, dayInput);
 
+  let whoSelect = null;
+  let whoField = null;
+  if (tripPeople(trip).length) {
+    whoField = document.createElement('label');
+    whoField.className = 'activity-modal-field';
+    const whoLabel = document.createElement('span');
+    whoLabel.textContent = 'For';
+    whoSelect = renderWhoSelect(trip, activity.who || '');
+    whoField.append(whoLabel, whoSelect);
+  }
+
   // Link (optional)
   const linkField = document.createElement('label');
   linkField.className = 'activity-modal-field';
@@ -1771,10 +1888,22 @@ function renderActivityModal() {
       day,
       link,
       notes: notesInput.value.trim(),
+      who: whoSelect ? whoSelect.value : '',
     });
   });
 
-  form.append(closeBtn, iconWrap, title, textField, dayField, linkField, notesField, errorEl, actions);
+  form.append(
+    closeBtn,
+    iconWrap,
+    title,
+    textField,
+    dayField,
+    ...(whoField ? [whoField] : []),
+    linkField,
+    notesField,
+    errorEl,
+    actions
+  );
   backdrop.appendChild(form);
   return backdrop;
 }
@@ -1989,6 +2118,158 @@ function renderViewToggle() {
   return wrap;
 }
 
+function renderItineraryPeople(trip) {
+  const wrap = document.createElement('div');
+  wrap.className = 'itinerary-people';
+  const people = tripPeople(trip);
+  const active = currentItineraryWho(trip);
+
+  if (people.length) {
+    const tabs = document.createElement('div');
+    tabs.className = 'itinerary-tabs';
+    tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-label', 'Itinerary');
+    tabs.appendChild(renderItineraryTab('shared', 'Shared', active === 'shared'));
+    people.forEach((person) => {
+      tabs.appendChild(renderItineraryTab(person.id, person.name, active === person.id));
+    });
+    wrap.appendChild(tabs);
+  }
+
+  const activePerson = people.find((p) => p.id === active);
+  if (activePerson) wrap.appendChild(renderPersonActions(activePerson));
+  wrap.appendChild(renderAddPersonControl());
+  return wrap;
+}
+
+function renderItineraryTab(id, label, selected) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'itinerary-tab' + (selected ? ' active' : '');
+  btn.textContent = label;
+  btn.setAttribute('role', 'tab');
+  btn.setAttribute('aria-selected', String(selected));
+  btn.addEventListener('click', () => {
+    if (itineraryWho === id && !renamingPersonId && !addingPerson) return;
+    itineraryWho = id;
+    renamingPersonId = null;
+    addingPerson = false;
+    render();
+  });
+  return btn;
+}
+
+function renderPersonActions(person) {
+  if (renamingPersonId === person.id) {
+    const form = document.createElement('form');
+    form.className = 'itinerary-person-form';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = person.name;
+    input.dataset.renamePerson = person.id;
+    input.setAttribute('aria-label', 'Traveler name');
+    const save = document.createElement('button');
+    save.type = 'submit';
+    save.className = 'itinerary-person-save';
+    save.textContent = 'Save';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'itinerary-person-cancel';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => {
+      renamingPersonId = null;
+      render();
+    });
+    form.append(input, save, cancel);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      renamePerson(person.id, input.value);
+    });
+    focusAfterRender = `[data-rename-person="${person.id}"]`;
+    return form;
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'itinerary-person-actions';
+  const rename = document.createElement('button');
+  rename.type = 'button';
+  rename.className = 'itinerary-person-text';
+  rename.textContent = 'Rename';
+  rename.addEventListener('click', () => {
+    renamingPersonId = person.id;
+    addingPerson = false;
+    render();
+  });
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'itinerary-person-text';
+  remove.textContent = 'Remove';
+  remove.addEventListener('click', () => removePerson(person.id));
+  actions.append(rename, remove);
+  return actions;
+}
+
+function renderAddPersonControl() {
+  if (addingPerson) {
+    const form = document.createElement('form');
+    form.className = 'itinerary-person-form';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Name';
+    input.dataset.addPerson = '1';
+    input.setAttribute('aria-label', 'Traveler name');
+    const save = document.createElement('button');
+    save.type = 'submit';
+    save.className = 'itinerary-person-save';
+    save.textContent = 'Add';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'itinerary-person-cancel';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => {
+      addingPerson = false;
+      render();
+    });
+    form.append(input, save, cancel);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!input.value.trim()) return;
+      addPerson(input.value);
+    });
+    focusAfterRender = '[data-add-person]';
+    return form;
+  }
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'itinerary-add';
+  btn.textContent = '+ Traveler';
+  btn.addEventListener('click', () => {
+    addingPerson = true;
+    renamingPersonId = null;
+    render();
+  });
+  return btn;
+}
+
+function renderWhoSelect(trip, value) {
+  const select = document.createElement('select');
+  select.className = 'activity-who-select';
+  select.setAttribute('aria-label', 'Who this activity is for');
+  const shared = document.createElement('option');
+  shared.value = '';
+  shared.textContent = 'Shared';
+  select.appendChild(shared);
+  tripPeople(trip).forEach((person) => {
+    const opt = document.createElement('option');
+    opt.value = person.id;
+    opt.textContent = person.name;
+    select.appendChild(opt);
+  });
+  select.value = knownWho(trip, value) ? value : '';
+  return select;
+}
+
 function dayNumberOf(trip, isoDate) {
   if (!trip.startDate || !isoDate) return null;
   const start = new Date(trip.startDate);
@@ -2017,6 +2298,313 @@ function formatDayDateRange(start, end) {
   const b = fmt(end);
   if (a && b && a !== b) return `${a} → ${b}`;
   return a || b || '';
+}
+
+function eachIsoDate(start, end, limit = 120) {
+  const days = [];
+  if (!start || !end || end < start) return { days, truncated: false };
+  let cursor = start;
+  let truncated = false;
+  while (cursor <= end) {
+    if (days.length >= limit) {
+      truncated = true;
+      break;
+    }
+    days.push(cursor);
+    cursor = icsAddDays(cursor, 1);
+  }
+  return { days, truncated };
+}
+
+function placeSpan(place) {
+  const start = place.arrival || place.departure || '';
+  const end = place.departure || place.arrival || '';
+  if (!start || !end || end < start) return null;
+  return { start, end };
+}
+
+function placeRoleOnDate(place, iso) {
+  const span = placeSpan(place);
+  if (!span || iso < span.start || iso > span.end) return null;
+  if (span.start === span.end) return 'single';
+  if (iso === span.start) return 'arrive';
+  if (iso === span.end) return 'depart';
+  return 'stay';
+}
+
+function itineraryBounds(trip) {
+  let start = trip.startDate || '';
+  let end = trip.endDate || '';
+  if (start && end && end >= start) return { start, end };
+  const dates = [];
+  for (const place of trip.places) {
+    const span = placeSpan(place);
+    if (span) dates.push(span.start, span.end);
+    for (const activity of place.activities || []) {
+      if (activity.day) dates.push(activity.day);
+    }
+  }
+  if (!start) start = dates.reduce((min, d) => (!min || d < min ? d : min), '');
+  if (!end) end = dates.reduce((max, d) => (!max || d > max ? d : max), '');
+  if (start && !end) end = start;
+  if (end && !start) start = end;
+  if (!start || !end || end < start) return { start: '', end: '' };
+  return { start, end };
+}
+
+function activitiesOnDate(trip, place, iso) {
+  return (place.activities || []).filter(
+    (a) => a.day === iso && activityOnItinerary(trip, a)
+  );
+}
+
+const DAY_ROLE_ORDER = { stay: 0, depart: 1, arrive: 2, single: 3, planned: 4 };
+
+function stopsForDay(trip, iso) {
+  const stops = [];
+  trip.places.forEach((place, index) => {
+    const role = placeRoleOnDate(place, iso);
+    const activities = activitiesOnDate(trip, place, iso);
+    if (role) stops.push({ place, index, role, activities });
+    else if (activities.length) stops.push({ place, index, role: 'planned', activities });
+  });
+  stops.sort((a, b) => DAY_ROLE_ORDER[a.role] - DAY_ROLE_ORDER[b.role] || a.index - b.index);
+  return stops;
+}
+
+function formatCalendarDate(iso) {
+  const d = new Date(`${iso}T00:00:00`);
+  if (isNaN(d.getTime())) return { weekday: '', dayNum: '', month: '', full: iso };
+  return {
+    weekday: d.toLocaleDateString(undefined, { weekday: 'short' }),
+    dayNum: String(d.getDate()),
+    month: d.toLocaleDateString(undefined, { month: 'short' }),
+    full: d.toLocaleDateString(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    }),
+  };
+}
+
+function todayIso() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function dayRoleLabel(role, stops) {
+  if (role === 'arrive') return 'Arrive';
+  if (role === 'depart') return 'Depart';
+  if (role === 'planned') return 'Also planned';
+  if (role === 'single') {
+    const basedElsewhere = stops.some(
+      (s) => s.role === 'stay' || s.role === 'depart' || s.role === 'arrive'
+    );
+    return basedElsewhere ? 'Day trip' : '';
+  }
+  return '';
+}
+
+function renderDaysCalendar(trip) {
+  const frag = document.createDocumentFragment();
+  const { start, end } = itineraryBounds(trip);
+  if (!start || !end) {
+    trip.places.forEach((place, i) => frag.appendChild(renderDaySegment(trip, place, i)));
+    return frag;
+  }
+
+  const { days, truncated } = eachIsoDate(start, end);
+  if (truncated) {
+    const note = document.createElement('p');
+    note.className = 'day-calendar-note';
+    note.textContent = `Showing the first ${days.length} days of this trip.`;
+    frag.appendChild(note);
+  }
+
+  days.forEach((iso) => frag.appendChild(renderDayCard(trip, iso)));
+
+  const offCalendar = trip.places.filter((place) => {
+    const span = placeSpan(place);
+    if (!span) return true;
+    return span.end < start || span.start > end;
+  });
+  if (offCalendar.length) {
+    const section = document.createElement('section');
+    section.className = 'day-off-calendar';
+    const heading = document.createElement('h3');
+    heading.className = 'day-off-calendar-title';
+    heading.textContent = 'Not on the calendar';
+    const hint = document.createElement('p');
+    hint.className = 'day-off-calendar-hint';
+    hint.textContent = 'These stops have no dates, or their dates fall outside the trip.';
+    section.append(heading, hint);
+    offCalendar.forEach((place) => {
+      section.appendChild(renderDaySegment(trip, place, trip.places.indexOf(place)));
+    });
+    frag.appendChild(section);
+  }
+  return frag;
+}
+
+function renderDayCard(trip, iso) {
+  const card = document.createElement('article');
+  card.className = 'day-card';
+  card.dataset.date = iso;
+  if (iso === todayIso()) card.classList.add('today');
+
+  const date = formatCalendarDate(iso);
+  const rail = document.createElement('div');
+  rail.className = 'day-card-rail';
+  const dateCol = document.createElement('div');
+  dateCol.className = 'day-card-date';
+  dateCol.title = date.full;
+  const weekday = document.createElement('span');
+  weekday.className = 'day-card-weekday';
+  weekday.textContent = date.weekday;
+  const num = document.createElement('span');
+  num.className = 'day-card-num';
+  num.textContent = date.dayNum;
+  const month = document.createElement('span');
+  month.className = 'day-card-month';
+  month.textContent = date.month;
+  dateCol.append(weekday, num, month);
+  const line = document.createElement('span');
+  line.className = 'day-card-line';
+  line.setAttribute('aria-hidden', 'true');
+  rail.append(dateCol, line);
+
+  const panel = document.createElement('div');
+  panel.className = 'day-card-panel';
+
+  const dayNum = dayNumberOf(trip, iso);
+  if (dayNum) {
+    const kicker = document.createElement('div');
+    kicker.className = 'day-card-kicker';
+    const pill = document.createElement('span');
+    pill.className = 'day-pill';
+    pill.textContent = `Day ${dayNum}`;
+    kicker.appendChild(pill);
+    panel.appendChild(kicker);
+  }
+
+  const stops = stopsForDay(trip, iso);
+  if (stops.length === 0) {
+    card.classList.add('is-open');
+    const open = document.createElement('p');
+    open.className = 'day-open';
+    open.textContent = 'Open day';
+    panel.appendChild(open);
+  } else {
+    stops.forEach((stop) => panel.appendChild(renderDayStop(trip, iso, stop, stops)));
+  }
+
+  card.append(rail, panel);
+  return card;
+}
+
+function renderDayStop(trip, iso, stop, stops) {
+  const { place, index, role, activities } = stop;
+  const wrap = document.createElement('section');
+  wrap.className = 'day-stop';
+  if (selectedPlaceId === place.id) wrap.classList.add('selected');
+  wrap.dataset.placeId = place.id;
+
+  const head = document.createElement('div');
+  head.className = 'day-stop-head';
+  head.addEventListener('click', (e) => {
+    if (e.target.closest('a, button, input, textarea')) return;
+    selectPlace(place.id);
+  });
+
+  const thumb = document.createElement('div');
+  thumb.className = 'thumb day-stop-thumb';
+  applyPhoto(thumb, place);
+
+  const titles = document.createElement('div');
+  titles.className = 'day-stop-titles';
+  const label = dayRoleLabel(role, stops);
+  if (label) {
+    const roleEl = document.createElement('span');
+    roleEl.className = 'day-stop-role';
+    roleEl.textContent = label;
+    titles.appendChild(roleEl);
+  }
+  const name = document.createElement('h3');
+  name.className = 'day-stop-name';
+  name.textContent = place.name;
+  titles.appendChild(name);
+  head.append(thumb, titles);
+  wrap.appendChild(head);
+
+  if ((role === 'arrive' || role === 'single') && index > 0 && place.transportTo) {
+    wrap.appendChild(renderDayTransport(place.transportTo));
+  }
+
+  const hasLodging = !!(
+    place.lodging && (place.lodging.url || (place.lodging.name || '').trim())
+  );
+  const dayTrip = role === 'single' && dayRoleLabel(role, stops) === 'Day trip';
+  if (role === 'depart') {
+    if (hasLodging) wrap.appendChild(renderDayCheckout(place));
+  } else if (role !== 'planned' && (hasLodging || role === 'arrive' || (role === 'single' && !dayTrip))) {
+    wrap.appendChild(renderLodgingSlot(place));
+  }
+
+  if (role === 'arrive' || role === 'single') {
+    const notesEl = renderNotes(place.notes, `place:${place.id}`);
+    if (notesEl) {
+      notesEl.classList.add('place-notes');
+      wrap.appendChild(notesEl);
+    }
+  }
+
+  if (activities.length) {
+    wrap.appendChild(renderDayActivityList(place, activities));
+  }
+
+  if (role === 'arrive' || role === 'single') {
+    const anytime = (place.activities || []).filter(
+      (a) => !a.day && activityOnItinerary(trip, a)
+    );
+    if (anytime.length) {
+      if (role === 'arrive' || activities.length) {
+        const anytimeLabel = document.createElement('span');
+        anytimeLabel.className = 'day-anytime';
+        anytimeLabel.textContent = 'Anytime during this stay';
+        wrap.appendChild(anytimeLabel);
+      }
+      wrap.appendChild(renderDayActivityList(place, anytime));
+    }
+  }
+
+  const datesUsable = !!(trip.startDate && trip.endDate);
+  wrap.appendChild(
+    renderActivityAddForm(place, datesUsable ? { defaultDay: iso, lockDay: true } : {})
+  );
+  return wrap;
+}
+
+function renderDayActivityList(place, activities) {
+  const list = document.createElement('ul');
+  list.className = 'activity-list day-activity-list';
+  activities.forEach((activity) => {
+    list.appendChild(renderActivityItem(place, activity, { hideDay: true }));
+  });
+  return list;
+}
+
+function renderDayCheckout(place) {
+  let host = '';
+  try { host = new URL(place.lodging.url).hostname.replace(/^www\./, ''); } catch {}
+  const name = place.lodging.name || host || 'your hotel';
+  const line = document.createElement('p');
+  line.className = 'day-checkout';
+  line.textContent = `Check out of ${name}`;
+  return line;
 }
 
 function renderDaySegment(trip, place, idx) {
@@ -2109,6 +2697,12 @@ function renderDayTransport(transport) {
   const detail = document.createElement('strong');
   detail.textContent = meta.label + (transport.duration ? ` · ${transport.duration}` : '');
   text.append(lead, detail);
+  if (transport.notes) {
+    const notes = document.createElement('span');
+    notes.className = 'day-transport-notes';
+    notes.textContent = transport.notes;
+    text.appendChild(notes);
+  }
 
   wrap.append(icon, text);
 
@@ -2127,8 +2721,15 @@ function renderDayTransport(transport) {
   return wrap;
 }
 
-function renderActivityPill(place) {
+function visibleActivities(place) {
+  const trip = getActiveTrip();
   const activities = Array.isArray(place.activities) ? place.activities : [];
+  if (!trip || !tripPeople(trip).length) return activities;
+  return activities.filter((a) => activityOnItinerary(trip, a));
+}
+
+function renderActivityPill(place) {
+  const activities = visibleActivities(place);
   const total = activities.length;
   const done = activities.filter((a) => a.done).length;
   const isExpanded = expandedPlaceId === place.id && editingPlaceId !== place.id;
@@ -2176,7 +2777,8 @@ function renderActivityPill(place) {
 }
 
 function renderActivities(place) {
-  const activities = Array.isArray(place.activities) ? place.activities : [];
+  const trip = getActiveTrip();
+  const activities = visibleActivities(place);
   const wrap = document.createElement('div');
   wrap.className = 'activities';
 
@@ -2195,7 +2797,12 @@ function renderActivities(place) {
   if (activities.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'activities-empty';
-    empty.textContent = 'Nothing planned yet — add your first one below.';
+    const people = tripPeople(trip);
+    const who = trip ? currentItineraryWho(trip) : 'shared';
+    const person = people.find((p) => p.id === who);
+    if (person) empty.textContent = `Nothing on ${person.name}'s plan for this stop yet.`;
+    else if (people.length) empty.textContent = 'Nothing shared at this stop yet.';
+    else empty.textContent = 'Nothing planned yet — add your first one below.';
     wrap.appendChild(empty);
   } else {
     const list = document.createElement('ul');
@@ -2209,7 +2816,7 @@ function renderActivities(place) {
   return wrap;
 }
 
-function renderActivityAddForm(place) {
+function renderActivityAddForm(place, { defaultDay = '', lockDay = false, defaultWho } = {}) {
   const trip = getActiveTrip();
   const tripStart = (trip && trip.startDate) || '';
   const tripEnd = (trip && trip.endDate) || '';
@@ -2217,6 +2824,7 @@ function renderActivityAddForm(place) {
 
   const form = document.createElement('form');
   form.className = 'activity-add';
+  if (lockDay) form.classList.add('day-locked');
 
   const main = document.createElement('div');
   main.className = 'activity-add-main';
@@ -2224,6 +2832,7 @@ function renderActivityAddForm(place) {
   textInput.type = 'text';
   textInput.placeholder = 'Add an activity…';
   textInput.dataset.addActivity = place.id;
+  if (lockDay && defaultDay) textInput.dataset.addDay = defaultDay;
   textInput.autocomplete = 'off';
   const submit = document.createElement('button');
   submit.type = 'submit';
@@ -2243,10 +2852,12 @@ function renderActivityAddForm(place) {
   dayInput.type = 'date';
   dayInput.title = datesUsable ? 'Day (optional)' : 'Set trip dates first';
   dayInput.disabled = !datesUsable;
+  if (defaultDay) dayInput.value = defaultDay;
   if (tripStart) dayInput.min = tripStart;
   if (tripEnd) dayInput.max = tripEnd;
   dayWrap.append(dayIcon, dayInput);
   if (!datesUsable) dayWrap.classList.add('disabled');
+  if (lockDay) dayWrap.hidden = true;
 
   const linkWrap = document.createElement('label');
   linkWrap.className = 'activity-add-extra';
@@ -2260,13 +2871,29 @@ function renderActivityAddForm(place) {
   linkWrap.append(linkIcon, linkInput);
 
   extras.append(dayWrap, linkWrap);
+  if (lockDay) extras.hidden = true;
+
+  const people = tripPeople(trip);
+  const whoDefault = defaultWho !== undefined
+    ? defaultWho
+    : (trip && currentItineraryWho(trip) !== 'shared' ? currentItineraryWho(trip) : '');
+  let whoSelect = null;
+  let whoRow = null;
+  if (people.length) {
+    whoRow = document.createElement('label');
+    whoRow.className = 'activity-who-row';
+    const whoLabel = document.createElement('span');
+    whoLabel.textContent = 'For';
+    whoSelect = renderWhoSelect(trip, whoDefault);
+    whoRow.append(whoLabel, whoSelect);
+  }
 
   const error = document.createElement('p');
   error.className = 'activity-add-error';
   error.hidden = true;
   error.setAttribute('role', 'alert');
 
-  form.append(main, extras, error);
+  form.append(main, ...(whoRow ? [whoRow] : []), extras, error);
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -2274,6 +2901,8 @@ function renderActivityAddForm(place) {
       text: textInput.value,
       day: dayInput.value,
       link: linkInput.value,
+      who: whoSelect ? whoSelect.value : '',
+      focusDay: lockDay ? defaultDay : '',
     });
     if (result && !result.ok) {
       error.textContent = result.error;
@@ -2296,7 +2925,7 @@ function renderActivityAddForm(place) {
   return form;
 }
 
-function renderActivityItem(place, activity) {
+function renderActivityItem(place, activity, { hideDay = false } = {}) {
   const trip = getActiveTrip();
   const li = document.createElement('li');
   li.className = 'activity-item';
@@ -2321,7 +2950,13 @@ function renderActivityItem(place, activity) {
 
   const tags = document.createElement('span');
   tags.className = 'activity-tags';
-  if (activity.day && trip) {
+  if (trip && tripPeople(trip).length && currentItineraryWho(trip) !== 'shared' && !knownWho(trip, activity.who)) {
+    const sharedPill = document.createElement('span');
+    sharedPill.className = 'activity-who-pill';
+    sharedPill.textContent = 'Shared';
+    tags.appendChild(sharedPill);
+  }
+  if (activity.day && trip && !hideDay) {
     const dayNum = dayNumberOf(trip, activity.day);
     const dayPill = document.createElement('span');
     dayPill.className = 'activity-day-pill';
@@ -2439,8 +3074,12 @@ function svgIcon(path, { size = 12, strokeWidth = 1.5, className = '' } = {}) {
 }
 
 const TRANSPORT_MODES = [
-  { id: 'flight', label: 'Flight', icon: '✈' },
+  { id: 'flight', label: 'Domestic flight', icon: '✈' },
+  { id: 'flight-intl', label: 'International flight', icon: '✈' },
   { id: 'train', label: 'Train', icon: '🚆' },
+  { id: 'metro', label: 'Metro', icon: '🚇' },
+  { id: 'tram', label: 'Tram', icon: '🚋' },
+  { id: 'taxi', label: 'Taxi', icon: '🚕' },
   { id: 'bus', label: 'Bus', icon: '🚌' },
   { id: 'car', label: 'Car', icon: '🚗' },
   { id: 'ferry', label: 'Ferry', icon: '⛴' },
@@ -2891,14 +3530,18 @@ function applyPhoto(thumb, place) {
   }
   if (place.photoUrl === '') return;
   thumb.classList.add('loading');
+  if (photoFetches.has(place.id)) return;
+  photoFetches.add(place.id);
   fetchPhoto(place).then((url) => {
+    photoFetches.delete(place.id);
     if (!placeStillExists(place.id)) return;
     place.photoUrl = url || '';
     saveState();
-    const stillThumb = document.querySelector(
-      `[data-place-id="${place.id}"] .thumb`
-    );
-    if (stillThumb) applyPhoto(stillThumb, place);
+    document.querySelectorAll(`[data-place-id="${place.id}"] .thumb`).forEach((el) => {
+      applyPhoto(el, place);
+    });
+  }).catch(() => {
+    photoFetches.delete(place.id);
   });
 }
 
@@ -3156,7 +3799,7 @@ function selectPlace(placeId, { scrollCard = false } = {}) {
     const el = marker.getElement();
     if (el) el.classList.toggle('selected', id === selectedPlaceId);
   });
-  document.querySelectorAll('.place-card').forEach((card) => {
+  document.querySelectorAll('.place-card, .day-stop').forEach((card) => {
     card.classList.toggle('selected', card.dataset.placeId === selectedPlaceId);
   });
 
@@ -3170,7 +3813,7 @@ function selectPlace(placeId, { scrollCard = false } = {}) {
     }
     if (scrollCard) {
       const card = document.querySelector(
-        `.place-card[data-place-id="${selectedPlaceId}"]`
+        `.place-card[data-place-id="${selectedPlaceId}"], .day-stop[data-place-id="${selectedPlaceId}"]`
       );
       if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }

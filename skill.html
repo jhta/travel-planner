@@ -122,6 +122,7 @@
   "documents": [{ "id": "doc-1", "name": "Passport (6+ months valid)", "checked": false }],
   "packing":   [{ "id": "pk-1",  "name": "Wide-brim hat",              "checked": false }],
   "foods":     [{ "id": "f-1",   "name": "Koshari", "imageUrl": null, "link": null }],
+  "people":    [{ "id": "who-ana", "name": "Ana" }],
   "places":    [ /* see Place */ ]
 }</code></pre>
 
@@ -141,7 +142,7 @@
   },
   "activities": [ /* see Activity */ ],
   "transportTo": {                     // optional; lives on the DESTINATION place
-    "mode": "Domestic flight",
+    "mode": "flight",
     "duration": "1h",
     "notes": "MS091 Cairo → Luxor",
     "link": "https://..."
@@ -155,6 +156,7 @@
   "done": false,
   "link":  "https://...",              // optional; tour booking or Maps link
   "day":   "2026-06-02",               // optional; YYYY-MM-DD
+  "who":   "who-ana",                  // optional; person id. Omit when shared.
   "notes": "Bring water and a hat"     // optional
 }</code></pre>
 
@@ -163,21 +165,23 @@
   <li>Checklist items (<code>documents</code>, <code>packing</code>) use <code>name</code>/<code>checked</code>. <strong>NOT</strong> <code>text</code>/<code>done</code>. Mixing them silently renders empty rows in the UI.</li>
   <li>Activities use <code>text</code>/<code>done</code>. Confusingly opposite.</li>
   <li><code>transportTo</code> lives on the <strong>destination</strong> place: <code>places[i+1].transportTo</code> describes how you got from <code>places[i]</code>. The first place has no <code>transportTo</code>.</li>
+  <li><code>transportTo.mode</code> must be one of: <code>flight</code> (domestic), <code>flight-intl</code> (international), <code>train</code>, <code>metro</code>, <code>tram</code>, <code>taxi</code>, <code>bus</code>, <code>car</code>, <code>ferry</code>, <code>walk</code>, <code>bike</code>. Anything else (e.g. "Subway") silently renders as Flight. Put the line or flight number in <code>notes</code>.</li>
   <li>Set <code>photoUrl: null</code> and <code>imageUrl: null</code> always — the app fetches landmark photos client-side. Never invent image URLs.</li>
   <li>All dates are <code>YYYY-MM-DD</code>. Place dates must be within the trip's <code>startDate</code>/<code>endDate</code>. <code>departure ≥ arrival</code>.</li>
   <li>ID prefixes: <code>t-</code> trip, <code>p-</code> place, <code>a-</code> activity, <code>doc-</code> document, <code>pk-</code> packing, <code>f-</code> food. Keep them unique within the trip and human-readable (<code>p-cairo</code>, <code>a-cairo-pyramids</code>).</li>
-  <li>Empty arrays are fine but the keys must exist (<code>documents: []</code>, <code>packing: []</code>, <code>foods: []</code>, <code>places: []</code>). The app's <code>ensureTripFields</code> will back-fill if missing, but you should be explicit.</li>
+  <li>Empty arrays are fine but the keys must exist (<code>documents: []</code>, <code>packing: []</code>, <code>foods: []</code>, <code>places: []</code>, <code>people: []</code>). The app's <code>ensureTripFields</code> will back-fill if missing, but you should be explicit.</li>
+  <li><code>people</code> is who is traveling: <code>{ id, name }</code>. Activity <code>who</code> is that person's id. Omit <code>who</code> for a shared activity. A solo trip leaves <code>people</code> empty and omits <code>who</code>.</li>
 </ul>
 
 <h2>Interview script (deep — run all steps)</h2>
 <p>Run the steps in order. After each, briefly summarize what you have and ask if the user wants to add or change anything before moving on. Be specific to the destination and dates — never generic.</p>
 <ol>
   <li><strong>Open</strong>. Ask: <em>"Are we starting fresh, or resuming an existing trip?"</em> If resuming, ask for the URL → decode it (see Decoding) → skip ahead to the Confirmation gate after reviewing.</li>
-  <li><strong>Trip basics</strong>. Name (suggest one if blank: <em>"Japan — Cherry Blossom Loop"</em>), start/end dates, vibe (relaxed / packed / honeymoon / family / solo / adventure / business+leisure). Sanity-check duration against vibe — push back if 4 days for a "packed Asia loop", or 3 weeks for "weekend getaway".</li>
+  <li><strong>Trip basics</strong>. Name (suggest one if blank: <em>"Japan — Cherry Blossom Loop"</em>), start/end dates, vibe (relaxed / packed / honeymoon / family / solo / adventure / business+leisure). Sanity-check duration against vibe — push back if 4 days for a "packed Asia loop", or 3 weeks for "weekend getaway". Ask who is traveling. If more than one person, add each to <code>people</code>. A solo trip leaves <code>people</code> empty.</li>
   <li><strong>Destinations</strong>. Ask which cities/regions. Recommend a realistic minimum stay per place (Cairo 3, Tokyo 4, Petra 1–2, Lisbon 3). Help split <code>arrival</code>/<code>departure</code> across the trip range. Push back gently if the user is overpacking the itinerary.</li>
   <li><strong>Lodging per place</strong>. Ask budget tier (budget / mid / luxury / boutique / hostel) and area preference (city center / near transit / scenic). Suggest 2–3 named hotels with one-line reasoning each. Set <code>lodging</code> only when the user picks; otherwise leave undefined.</li>
-  <li><strong>Activities per place</strong>. Suggest 4–8 concrete activities per place, ordered must-see → optional. Mix sights, food experiences, walking, downtime. Tag each with <code>day</code> if the user wants a paced itinerary; otherwise leave <code>day</code> undefined.</li>
-  <li><strong>Transport between places</strong>. For each adjacent pair, suggest mode (flight / train / drive / ferry / bus) and rough duration. Add to <code>places[i+1].transportTo</code>. Skip the first place.</li>
+  <li><strong>Activities per place</strong>. Suggest 4–8 concrete activities per place, ordered must-see → optional. Mix sights, food experiences, walking, downtime. Tag each with <code>day</code> if the user wants a paced itinerary; otherwise leave <code>day</code> undefined. If more than one person is traveling, ask which activities are shared and which belong to one person. Set <code>who</code> to that person's id, and leave it off shared activities.</li>
+  <li><strong>Transport between places</strong>. For each adjacent pair, suggest mode (flight / flight-intl / train / metro / tram / taxi / bus / car / ferry / walk / bike) and rough duration. Add to <code>places[i+1].transportTo</code>. Skip the first place.</li>
   <li><strong>Trip-level flights</strong>. Outbound + inbound flight numbers and booking refs if known. Skip the field if not booked yet (still include <code>flights: { outbound: { number: "", booking: "" }, inbound: { ... } }</code>).</li>
   <li><strong>Nationality + documents</strong>. Ask: <em>"What passport(s) are travelling?"</em> Build the <code>documents</code> checklist with: passport (with validity rule), visa for each destination (note entry method: e-visa / on-arrival / consulate-only / visa-free), travel insurance, vaccine certs if endemic disease applies, IDP if renting cars, copies of bookings. Always end the list with: <em>"Verify all visa/document requirements with each destination's consulate before travel — rules change."</em></li>
   <li><strong>Packing</strong>. Climate-aware. Infer season from dates + region; ask about specific activities (hiking, formal dinners, religious sites with dress codes, beach, snow). Suggest 10–18 items. Don't recommend bulky jackets for warm climates.</li>
